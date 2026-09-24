@@ -17,7 +17,7 @@ Native computer controls are preferred when available. If unavailable, use the l
 3. Search by title, tag, and body text. Check Starred, Recent, collection filtering, the command palette, copying, and keyboard shortcuts.
 4. Modify a file outside Fragments and confirm the UI refreshes. While editing a draft, modify the file externally and confirm Fragments reports a conflict instead of overwriting it.
 5. Add a large set of notes to the disposable vault. Check that browsing and search remain responsive and the list only renders visible rows.
-6. Change the snippet font in Settings, including a custom installed font. Confirm both the editor and Markdown preview use it after saving and reopening the app.
+6. Open Obsidian Settings → Community plugins → Fragments. Type part of an existing folder name, select its suggestion, and confirm the Fragments window indexes that folder. Change the snippet font, including a custom installed font, and confirm both the editor and Markdown preview update.
 7. Inspect desktop and narrow window layouts, focus visibility, empty states, and console errors.
 
 For another build, copy the same three artifacts into the same fixture and disable then enable Fragments. Do not launch a new profile just to load a build. At the end, close only the isolated process and remove its disposable directory. Keep any requested screenshots.

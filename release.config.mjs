@@ -7,7 +7,10 @@ const releaseConfig = {
     ["@semantic-release/changelog", { changelogFile: "CHANGELOG.md" }],
     [
       "@semantic-release/exec",
-      { prepareCmd: "pnpm run release:version ${nextRelease.version} && pnpm run build" },
+      {
+        prepareCmd:
+          "pnpm run release:version ${nextRelease.version} && pnpm exec oxfmt CHANGELOG.md && pnpm run build",
+      },
     ],
     [
       "@semantic-release/github",

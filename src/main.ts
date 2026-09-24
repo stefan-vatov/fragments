@@ -1,6 +1,6 @@
 import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile } from "obsidian";
 import { FragmentLibrary } from "./library";
-import { DEFAULT_SETTINGS, type FragmentsSettings } from "./settings";
+import { DEFAULT_SETTINGS, FragmentsSettingTab, type FragmentsSettings } from "./settings";
 import { FRAGMENTS_VIEW, FragmentsView } from "./view";
 
 const WINDOW_MARKER = "data-fragments-app-window";
@@ -10,6 +10,15 @@ export default class FragmentsPlugin extends Plugin {
   library!: FragmentLibrary;
   private activation: Promise<WorkspaceLeaf | undefined> = Promise.resolve(undefined);
   private unloaded = false;
+  private settingsRevision = 0;
+  private readonly settingsListeners = new Set<() => void>();
+
+  subscribeSettings = (listener: () => void): (() => void) => {
+    this.settingsListeners.add(listener);
+    return () => this.settingsListeners.delete(listener);
+  };
+
+  settingsSnapshot = (): number => this.settingsRevision;
 
   async onload(): Promise<void> {
     this.settings = {
@@ -18,6 +27,7 @@ export default class FragmentsPlugin extends Plugin {
     };
     this.library = new FragmentLibrary(this.app, this.settings);
     this.registerView(FRAGMENTS_VIEW, (leaf) => new FragmentsView(leaf, this));
+    this.addSettingTab(new FragmentsSettingTab(this.app, this));
     this.addRibbonIcon("blocks", "Open Fragments", () => {
       void this.activateView();
     });
@@ -80,6 +90,8 @@ export default class FragmentsPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    this.settingsRevision += 1;
+    for (const listener of this.settingsListeners) listener();
   }
 
   activateView(): Promise<WorkspaceLeaf | undefined> {

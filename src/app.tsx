@@ -21,7 +21,6 @@ import {
   Menu,
   Plus,
   Search,
-  Settings,
   Star,
   Tag,
   Trash2,
@@ -30,7 +29,7 @@ import {
 import type FragmentsPlugin from "./main";
 import type { FragmentsView } from "./view";
 import type { Fragment, FragmentLibrary } from "./library";
-import { snippetFontFamily, type SnippetFont } from "./settings";
+import { snippetFontFamily } from "./settings";
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -44,7 +43,7 @@ interface Props {
 }
 
 type Scope = { kind: "all" | "starred" | "recent" | "collection" | "tag"; value?: string };
-type Dialog = "settings" | "palette" | "collection" | null;
+type Dialog = "palette" | "collection" | null;
 
 const labelScope = (scope: Scope): string => {
   if (scope.kind === "starred") return "Starred";
@@ -305,7 +304,6 @@ function useController({ plugin, view, handle }: Props) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteIndex, setPaletteIndex] = useState(0);
-  const [settingsFolder, setSettingsFolder] = useState(plugin.settings.folder);
   const [newCollection, setNewCollection] = useState("");
   const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">("list");
   const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
@@ -433,7 +431,6 @@ function useController({ plugin, view, handle }: Props) {
       return;
     }
     if (index === paletteItems.length) void createFragment();
-    else setDialog("settings");
   };
 
   return {
@@ -450,7 +447,6 @@ function useController({ plugin, view, handle }: Props) {
     dialog,
     paletteQuery,
     paletteIndex,
-    settingsFolder,
     newCollection,
     mobilePane,
     shortcut,
@@ -481,7 +477,6 @@ function useController({ plugin, view, handle }: Props) {
     choosePalette,
     setPaletteQuery,
     setPaletteIndex,
-    setSettingsFolder,
     setNewCollection,
   };
 }
@@ -495,6 +490,7 @@ function useAppContext(): Controller {
 }
 
 export function AppShell(props: Props) {
+  useSyncExternalStore(props.plugin.subscribeSettings, props.plugin.settingsSnapshot);
   const controller = useController(props);
   const style = {
     "--frag-snippet-font": snippetFontFamily(controller.plugin.settings),
@@ -624,11 +620,8 @@ function SidebarPane() {
           ))}
         </nav>
         <footer className="fragments-sidebar-footer">
-          <button onClick={() => setDialog("settings")}>
-            <Settings size={14} /> Settings
-          </button>
           <span className="fragments-vault-name" title={plugin.app.vault.getName()}>
-            {plugin.app.vault.getName()}
+            Vault · {plugin.app.vault.getName()}
           </span>
         </footer>
       </aside>
@@ -923,7 +916,7 @@ function Dialogs() {
                   onKeyDown={(event) => {
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
-                      setPaletteIndex(Math.min(paletteIndex + 1, paletteItems.length + 1));
+                      setPaletteIndex(Math.min(paletteIndex + 1, paletteItems.length));
                     }
                     if (event.key === "ArrowUp") {
                       event.preventDefault();
@@ -953,15 +946,6 @@ function Dialogs() {
               >
                 <Plus size={15} />
                 <span>New snippet</span>
-              </button>
-              <button
-                className={paletteIndex === paletteItems.length + 1 ? "active" : ""}
-                onClick={() => {
-                  setDialog("settings");
-                }}
-              >
-                <Settings size={15} />
-                <span>Settings</span>
               </button>
             </div>
           )}
@@ -998,92 +982,8 @@ function Dialogs() {
               </button>
             </div>
           )}
-          {dialog === "settings" && <SettingsDialog />}{" "}
         </div>
       )}
     </>
-  );
-}
-function SettingsDialog() {
-  const { setDialog, settingsFolder, setSettingsFolder, library, plugin } = useAppContext();
-  const [font, setFont] = useState<SnippetFont>(plugin.settings.snippetFont);
-  const [customFont, setCustomFont] = useState(plugin.settings.customSnippetFont);
-  const previewFont = snippetFontFamily({ snippetFont: font, customSnippetFont: customFont });
-
-  const saveChanges = async (): Promise<void> => {
-    try {
-      if (settingsFolder.trim() !== plugin.settings.folder)
-        await library.changeFolder(settingsFolder);
-      plugin.settings.snippetFont = font;
-      plugin.settings.customSnippetFont = customFont.trim();
-      await plugin.saveSettings();
-      setDialog(null);
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-
-  return (
-    <div className="fragments-settings" role="dialog" aria-label="Fragments settings">
-      <header>
-        <strong>SETTINGS</strong>
-        <button onClick={() => setDialog(null)}>
-          <X size={18} />
-        </button>
-      </header>
-      <div className="fragments-settings-content">
-        <nav>
-          <small>PREFERENCES</small>
-          <button className="active">
-            <Settings size={14} /> General
-          </button>
-        </nav>
-        <section>
-          <h2>General</h2>
-          <label>
-            Fragments folder
-            <p>Markdown files in this folder and its subfolders form your library.</p>
-            <input
-              value={settingsFolder}
-              onChange={(event) => setSettingsFolder(event.target.value)}
-            />
-          </label>
-          <label className="fragments-font-setting">
-            Snippet font
-            <p>Used in the editor and Markdown preview.</p>
-            <select value={font} onChange={(event) => setFont(event.target.value as SnippetFont)}>
-              <option value="monospace">Obsidian monospace</option>
-              <option value="text">Obsidian text</option>
-              <option value="interface">Obsidian interface</option>
-              <option value="serif">Serif</option>
-              <option value="custom">Custom font family</option>
-            </select>
-          </label>
-          {font === "custom" && (
-            <label className="fragments-custom-font-setting">
-              Font family
-              <p>Enter a font installed on your device, such as Inter or Iosevka.</p>
-              <input
-                value={customFont}
-                onChange={(event) => setCustomFont(event.target.value)}
-                placeholder="Font family"
-              />
-            </label>
-          )}
-          <div className="fragments-font-sample" style={{ fontFamily: previewFont }}>
-            The quick brown fox jumps over the lazy dog. 0123456789
-          </div>
-          <p className="fragments-settings-help">
-            All properties are stored in YAML frontmatter. The note body stays ordinary Markdown.
-          </p>
-        </section>
-      </div>
-      <footer>
-        <span>Fragments v0.1.0</span>
-        <button className="fragments-primary" onClick={() => void saveChanges()}>
-          Save Changes
-        </button>
-      </footer>
-    </div>
   );
 }

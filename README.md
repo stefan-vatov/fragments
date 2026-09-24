@@ -4,7 +4,7 @@ Fragments is an Obsidian backed snippet app. It opens in a reusable app window o
 
 ## Use
 
-Install the plugin in `<vault>/.obsidian/plugins/fragments`, enable it under Community plugins, and run **Fragments: Open** or click the ribbon icon. The default library folder is `Fragments`; change it in the app's Settings. Subfolders become collections. Settings also lets you choose the font used in snippet editing and preview, including a custom installed font.
+Install the plugin in `<vault>/.obsidian/plugins/fragments`, enable it under Community plugins, and run **Fragments: Open** or click the ribbon icon. Open **Obsidian Settings → Community plugins → Fragments** to choose the library folder and the font used for snippet editing and preview. The folder field suggests existing vault folders as you type. The default folder is `Fragments`; its subfolders become collections.
 
 The app supports search across titles, tags, collections, and note bodies; Starred and Recent views; collection and tag filtering; Markdown editing and preview; copy; rename; move; and trash. Use Ctrl+K (⌘K on macOS) for the command palette and Ctrl+S (⌘S on macOS) to save. Edits also save after a short pause. Fragments reads changes made to the Markdown files outside the app and avoids overwriting a note changed while a draft was open.
 
