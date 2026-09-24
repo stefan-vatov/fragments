@@ -367,6 +367,55 @@
 .fragments-editor-header > button.mode-active {
   color: var(--frag-accent);
 }
+.fragments-scratch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.fragments-editor-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.fragments-fragment-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.fragments-editor-workspace.has-scratchpad .fragments-fragment-content {
+  flex: 0 0 50%;
+}
+.fragments-scratchpad {
+  display: flex;
+  flex: 0 0 50%;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--frag-line);
+  background: var(--frag-panel);
+}
+.fragments-scratchpad-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--frag-line);
+}
+.fragments-scratchpad-header strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.fragments-scratchpad-header span {
+  margin-left: auto;
+  color: var(--frag-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .fragments-title-wrap {
   display: flex;
   flex: 1;
@@ -432,7 +481,7 @@
 }
 .fragments-app textarea.fragments-editor {
   flex: 1;
-  width: min(100%, 960px);
+  width: 100%;
   min-height: 0;
   resize: none;
   padding: 26px 30px;
@@ -446,7 +495,7 @@
 }
 .fragments-preview {
   flex: 1;
-  width: min(100%, 960px);
+  width: 100%;
   min-height: 0;
   overflow: auto;
   padding: 26px 30px;
@@ -464,6 +513,23 @@
 .fragments-preview pre {
   border: 1px solid #333;
   background: #181818 !important;
+}
+.fragments-app textarea.fragments-scratchpad-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 26px 30px;
+  border: 0;
+  background: transparent;
+  color: var(--frag-text);
+  font-family: var(--frag-snippet-font, var(--font-monospace)) !important;
+  font-size: 14px;
+  line-height: 1.75;
+  tab-size: 2;
+}
+.fragments-scratchpad-editor::placeholder {
+  color: var(--frag-subtle);
 }
 .fragments-editor-footer {
   display: flex;
@@ -616,7 +682,38 @@
     display: none;
   }
 }
-@media (max-width: 600px) {
+@media (max-width: 900px) {
+  .fragments-editor-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 82px;
+    gap: 2px 8px;
+    padding: 6px 12px;
+  }
+  .fragments-title-wrap {
+    flex: 1 1 100%;
+    order: -1;
+  }
+  .fragments-editor-header > button {
+    min-height: 28px;
+    padding: 4px;
+  }
+  .fragments-scratch-toggle span {
+    display: none;
+  }
+  .fragments-editor-workspace.has-scratchpad {
+    flex-direction: column;
+  }
+  .fragments-editor-workspace.has-scratchpad .fragments-fragment-content,
+  .fragments-scratchpad {
+    flex: 1 1 50%;
+  }
+  .fragments-scratchpad {
+    border-top: 1px solid var(--frag-line);
+    border-left: 0;
+  }
+}
+@media (max-width: 800px) {
   .fragments-app {
     display: block;
     position: relative;
@@ -652,7 +749,11 @@
   }
   .fragments-back {
     display: block;
+    order: -2;
     transform: rotate(180deg);
+  }
+  .fragments-title-wrap {
+    flex-basis: calc(100% - 44px);
   }
   .fragments-properties select,
   .fragments-properties input {
@@ -666,7 +767,8 @@
     font-size: 15px;
   }
   .fragments-app textarea.fragments-editor,
-  .fragments-preview {
+  .fragments-preview,
+  .fragments-app textarea.fragments-scratchpad-editor {
     padding: 22px 20px;
   }
 }

@@ -19,6 +19,8 @@ import {
   FilePlus2,
   Folder,
   Menu,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Search,
   Star,
@@ -120,7 +122,8 @@ function useKeyboard(
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        void save();
+        if (!(event.target instanceof HTMLElement && event.target.closest(".fragments-scratchpad")))
+          void save();
       }
       if (event.key === "Escape") setDialog(null);
     };
@@ -705,6 +708,40 @@ function ListPane() {
   );
 }
 
+function ScratchpadToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
+  return (
+    <button
+      className={`fragments-scratch-toggle ${open ? "mode-active" : ""}`}
+      aria-label={open ? "Hide scratchpad" : "Show scratchpad"}
+      aria-pressed={open}
+      title={open ? "Hide scratchpad" : "Show scratchpad"}
+      onClick={toggle}
+    >
+      {open ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+      <span>Scratchpad</span>
+    </button>
+  );
+}
+
+function Scratchpad({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+  return (
+    <section className="fragments-scratchpad" aria-label="Scratchpad">
+      <header className="fragments-scratchpad-header">
+        <strong>Scratchpad</strong>
+        <span>Temporary · not saved</span>
+      </header>
+      <textarea
+        className="fragments-scratchpad-editor"
+        aria-label="Scratchpad text"
+        spellCheck={false}
+        value={text}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Type or paste here. Cleared when Fragments closes."
+      />
+    </section>
+  );
+}
+
 function EditorPane() {
   const {
     mobilePane,
@@ -730,6 +767,8 @@ function EditorPane() {
   } = useAppContext();
   const [editingTags, setEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
+  const [scratchOpen, setScratchOpen] = useState(true);
+  const [scratchText, setScratchText] = useState("");
   const cancelTags = useRef(false);
   useEffect(() => {
     setEditingTags(false);
@@ -779,102 +818,114 @@ function EditorPane() {
               >
                 Preview
               </button>
-              <button className="fragments-primary fragments-copy" onClick={() => void copy()}>
+              <ScratchpadToggle open={scratchOpen} toggle={() => setScratchOpen((open) => !open)} />
+              <button
+                className="fragments-primary fragments-copy"
+                aria-label="Copy fragment"
+                onClick={() => void copy()}
+              >
                 <Copy size={14} /> Copy
               </button>
               <button title="Move to trash" onClick={() => void trash()}>
                 <Trash2 size={16} />
               </button>
             </header>
-            <div className="fragments-properties">
-              <div className="fragments-tags">
-                {selectedItem.tags.map((tag) => (
-                  <span key={tag}>#{tag}</span>
-                ))}
-                {editingTags ? (
+            <div className={`fragments-editor-workspace ${scratchOpen ? "has-scratchpad" : ""}`}>
+              <div className="fragments-fragment-content">
+                <div className="fragments-properties">
+                  <div className="fragments-tags">
+                    {selectedItem.tags.map((tag) => (
+                      <span key={tag}>#{tag}</span>
+                    ))}
+                    {editingTags ? (
+                      <input
+                        className="fragments-tag-input"
+                        aria-label="Edit tags"
+                        autoFocus
+                        value={tagDraft}
+                        onChange={(event) => setTagDraft(event.target.value)}
+                        onBlur={finishTags}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                          if (event.key === "Escape") {
+                            cancelTags.current = true;
+                            event.currentTarget.blur();
+                            event.stopPropagation();
+                          }
+                        }}
+                        placeholder="tag, tag"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setTagDraft(selectedItem.tags.join(", "));
+                          setEditingTags(true);
+                        }}
+                      >
+                        + tag
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    aria-label="Collection"
+                    value={selectedItem.collection}
+                    onChange={(event) => void move(event.target.value)}
+                  >
+                    <option value="">No collection</option>
+                    {library.collections().map((collection) => (
+                      <option key={collection} value={collection}>
+                        {collection}
+                      </option>
+                    ))}
+                  </select>
                   <input
-                    className="fragments-tag-input"
-                    aria-label="Edit tags"
-                    autoFocus
-                    value={tagDraft}
-                    onChange={(event) => setTagDraft(event.target.value)}
-                    onBlur={finishTags}
+                    key={selectedItem.path}
+                    aria-label="Language"
+                    title="Language"
+                    defaultValue={selectedItem.language}
+                    placeholder="Language"
+                    onBlur={(event) => {
+                      void library
+                        .updateProperties(selectedItem.path, { language: event.target.value })
+                        .catch(errorNotice);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") event.currentTarget.blur();
-                      if (event.key === "Escape") {
-                        cancelTags.current = true;
-                        event.currentTarget.blur();
-                        event.stopPropagation();
-                      }
                     }}
-                    placeholder="tag, tag"
+                  />
+                </div>
+                {mode === "edit" ? (
+                  <textarea
+                    className="fragments-editor"
+                    aria-label="Fragment Markdown"
+                    spellCheck={false}
+                    value={draft}
+                    onChange={(event) => edit(selectedItem.path, event.target.value)}
+                    placeholder="Write Markdown here…"
                   />
                 ) : (
-                  <button
-                    onClick={() => {
-                      setTagDraft(selectedItem.tags.join(", "));
-                      setEditingTags(true);
-                    }}
-                  >
-                    + tag
-                  </button>
+                  <Preview
+                    body={dirty ? draft : body}
+                    path={selectedItem.path}
+                    view={view}
+                    plugin={plugin}
+                  />
                 )}
+                <footer className="fragments-editor-footer">
+                  <span>
+                    {draft.length.toLocaleString()} chars ·{" "}
+                    {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+                  </span>
+                  <span>
+                    {dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}
+                  </span>
+                  <button disabled={!dirty} onClick={() => void save()}>
+                    {dirty ? "Save changes" : "Saved"}
+                  </button>
+                </footer>
               </div>
-              <select
-                aria-label="Collection"
-                value={selectedItem.collection}
-                onChange={(event) => void move(event.target.value)}
-              >
-                <option value="">No collection</option>
-                {library.collections().map((collection) => (
-                  <option key={collection} value={collection}>
-                    {collection}
-                  </option>
-                ))}
-              </select>
-              <input
-                key={selectedItem.path}
-                aria-label="Language"
-                title="Language"
-                defaultValue={selectedItem.language}
-                placeholder="Language"
-                onBlur={(event) => {
-                  void library
-                    .updateProperties(selectedItem.path, { language: event.target.value })
-                    .catch(errorNotice);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.blur();
-                }}
-              />
+              {scratchOpen && <Scratchpad text={scratchText} onChange={setScratchText} />}
             </div>
-            {mode === "edit" ? (
-              <textarea
-                className="fragments-editor"
-                aria-label="Fragment Markdown"
-                spellCheck={false}
-                value={draft}
-                onChange={(event) => edit(selectedItem.path, event.target.value)}
-                placeholder="Write Markdown here…"
-              />
-            ) : (
-              <Preview
-                body={dirty ? draft : body}
-                path={selectedItem.path}
-                view={view}
-                plugin={plugin}
-              />
-            )}
-            <footer className="fragments-editor-footer">
-              <span>
-                {draft.length.toLocaleString()} chars ·{" "}
-                {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
-              </span>
-              <span>{dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}</span>
-              <button disabled={!dirty} onClick={() => void save()}>
-                {dirty ? "Save changes" : "Saved"}
-              </button>
-            </footer>
           </>
         ) : (
           <div className="fragments-welcome">
