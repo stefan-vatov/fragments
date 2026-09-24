@@ -33,6 +33,7 @@ import type { FragmentsView } from "./view";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
+import { indexFragments, searchFragments, type SearchScope } from "./search";
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -45,10 +46,9 @@ interface Props {
   handle: (handle: ShellHandle | null) => void;
 }
 
-type Scope = { kind: "all" | "starred" | "recent" | "collection" | "tag"; value?: string };
 type Dialog = "palette" | "collection" | null;
 
-const labelScope = (scope: Scope): string => {
+const labelScope = (scope: SearchScope): string => {
   if (scope.kind === "starred") return "Starred";
   if (scope.kind === "recent") return "Recent";
   if (scope.kind === "collection") return scope.value ?? "Collection";
@@ -67,40 +67,6 @@ const age = (modified: number): string => {
 const errorNotice = (error: Error): void => {
   new Notice(error.message);
 };
-
-function matchesScope(item: Fragment, scope: Scope): boolean {
-  switch (scope.kind) {
-    case "starred":
-      return item.starred;
-    case "recent":
-      return Date.now() - item.modified <= 30 * 86400000;
-    case "collection":
-      return item.collection === scope.value || item.collection.startsWith(`${scope.value}/`);
-    case "tag":
-      return item.tags.includes(scope.value ?? "");
-    case "all":
-      return true;
-  }
-  return true;
-}
-
-function filterEntries(
-  entries: Fragment[],
-  scope: Scope,
-  tagFilter: string,
-  query: string,
-  sort: "recent" | "name",
-): Fragment[] {
-  const term = query.toLowerCase().trim();
-  const list = entries.filter(
-    (item) =>
-      matchesScope(item, scope) &&
-      (!tagFilter || item.tags.includes(tagFilter)) &&
-      (!term || item.searchText.includes(term)),
-  );
-  list.sort((a, b) => (sort === "name" ? a.title.localeCompare(b.title) : b.modified - a.modified));
-  return list;
-}
 
 function countTags(entries: Fragment[]): [string, number][] {
   const counts = new Map<string, number>();
@@ -403,7 +369,7 @@ function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
   const entries = useMemo(() => library.entries(), [library, revision]);
-  const [scope, setScope] = useState<Scope>({ kind: "all" });
+  const [scope, setScope] = useState<SearchScope>({ kind: "all" });
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -422,10 +388,11 @@ function useController({ plugin, view, handle }: Props) {
     selectedItem?.modified,
   );
   const tags = useMemo(() => countTags(entries), [entries]);
+  const searchIndex = useMemo(() => indexFragments(entries), [entries]);
 
   const filtered = useMemo(
-    () => filterEntries(entries, scope, tagFilter, query, sort),
-    [entries, scope, tagFilter, query, sort],
+    () => searchFragments(searchIndex, { scope, tagFilter, query, sort, includeBody: true }),
+    [searchIndex, scope, tagFilter, query, sort],
   );
 
   useEffect(() => {
@@ -467,7 +434,7 @@ function useController({ plugin, view, handle }: Props) {
     }
   }, [dialog]);
 
-  const selectScope = (next: Scope): void => {
+  const selectScope = (next: SearchScope): void => {
     setScope(next);
     setTagFilter("");
     setQuery("");
@@ -476,6 +443,12 @@ function useController({ plugin, view, handle }: Props) {
   const choose = (path: string): void => {
     setSelected(path);
     setMobilePane("editor");
+  };
+  const chooseGlobal = (path: string): void => {
+    setScope({ kind: "all" });
+    setTagFilter("");
+    setQuery("");
+    choose(path);
   };
   const copy = async (): Promise<void> => {
     try {
@@ -573,11 +546,13 @@ function useController({ plugin, view, handle }: Props) {
     dirty,
     tags,
     filtered,
+    searchIndex,
     createFragment,
     setDialog,
     setMobilePane,
     selectScope,
     choose,
+    chooseGlobal,
     setQuery,
     setTagFilter,
     setSort,
@@ -626,7 +601,7 @@ export function AppShell(props: Props) {
 }
 
 function MobileBar() {
-  const { setMobilePane, createFragment } = useAppContext();
+  const { setMobilePane, createFragment, view } = useAppContext();
   return (
     <>
       <div className="fragments-mobile-bar">
@@ -634,6 +609,19 @@ function MobileBar() {
           <Menu size={18} />
         </button>
         <span>FRAGMENTS</span>
+        <button
+          aria-label="Search all fragments"
+          onClick={() => {
+            setMobilePane("editor");
+            window.requestAnimationFrame(() => {
+              view.contentEl
+                .querySelector<HTMLInputElement>(".fragments-global-search input")
+                ?.focus();
+            });
+          }}
+        >
+          <Search size={18} />
+        </button>
         <button aria-label="New fragment" onClick={() => void createFragment()}>
           <Plus size={18} />
         </button>
@@ -990,6 +978,118 @@ function FragmentFooter() {
   );
 }
 
+function GlobalSearch() {
+  const { searchIndex, chooseGlobal, view } = useAppContext();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const results = useMemo(
+    () => (query.trim() ? searchFragments(searchIndex, { query, limit: 8 }) : []),
+    [searchIndex, query],
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    const doc = view.containerEl.ownerDocument;
+    doc.addEventListener("pointerdown", closeOutside);
+    return () => doc.removeEventListener("pointerdown", closeOutside);
+  }, [open, view]);
+
+  const select = (path: string): void => {
+    chooseGlobal(path);
+    setQuery("");
+    setOpen(false);
+    input.current?.blur();
+  };
+
+  return (
+    <div className="fragments-global-search" ref={root}>
+      <Search size={15} aria-hidden="true" />
+      <input
+        ref={input}
+        role="combobox"
+        aria-label="Search all fragments by title or tag"
+        aria-autocomplete="list"
+        aria-expanded={open && Boolean(query.trim())}
+        aria-controls={open && query.trim() ? "fragments-global-results" : undefined}
+        aria-activedescendant={
+          open && results[active] ? `fragments-global-result-${active}` : undefined
+        }
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          setQuery(event.target.value.slice(0, 100));
+          setActive(0);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+            setActive((current) => Math.min(current + 1, Math.max(results.length - 1, 0)));
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((current) => Math.max(current - 1, 0));
+          } else if (event.key === "Enter" && results[active]) {
+            event.preventDefault();
+            select(results[active].path);
+          } else if (event.key === "Escape") {
+            event.stopPropagation();
+            setOpen(false);
+            input.current?.blur();
+          }
+        }}
+        placeholder="Search all fragments…"
+      />
+      {query && (
+        <button
+          type="button"
+          aria-label="Clear global search"
+          onClick={() => {
+            setQuery("");
+            input.current?.focus();
+          }}
+        >
+          <X size={13} />
+        </button>
+      )}
+      {open && query.trim() && (
+        <div className="fragments-global-results" id="fragments-global-results" role="listbox">
+          <div className="fragments-global-results-label">All fragments · titles and tags</div>
+          {results.length ? (
+            results.map((fragment, resultIndex) => (
+              <button
+                id={`fragments-global-result-${resultIndex}`}
+                role="option"
+                aria-selected={resultIndex === active}
+                className={resultIndex === active ? "is-active" : ""}
+                key={fragment.path}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActive(resultIndex)}
+                onClick={() => select(fragment.path)}
+              >
+                <span className="fragments-global-result-title">{fragment.title}</span>
+                <span className="fragments-global-result-detail">
+                  {fragment.collection || "All Snippets"}
+                  {fragment.tags.length > 0 &&
+                    ` · ${fragment.tags.map((tag) => `#${tag}`).join(" ")}`}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="fragments-global-no-results">No matching titles or tags</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditorPane() {
   const {
     mobilePane,
@@ -1022,9 +1122,7 @@ function EditorPane() {
     saveScratchpad,
   } = useScratchpad(library, library.scratchpadPath());
   const cancelTags = useRef(false);
-  useEffect(() => {
-    setEditingTags(false);
-  }, [selectedItem?.path]);
+  useEffect(() => setEditingTags(false), [selectedItem?.path]);
   const finishTags = (): void => {
     if (!cancelTags.current) void updateTags(tagDraft);
     cancelTags.current = false;
@@ -1033,12 +1131,12 @@ function EditorPane() {
   return (
     <>
       <main className={`fragments-editor-pane ${mobilePane === "editor" ? "mobile-active" : ""}`}>
-        {selectedItem ? (
-          <>
-            <header className="fragments-editor-header">
-              <button className="fragments-back" onClick={() => setMobilePane("list")}>
-                <ChevronRight size={17} />
-              </button>
+        <header className="fragments-editor-header">
+          <button className="fragments-back" onClick={() => setMobilePane("list")}>
+            <ChevronRight size={17} />
+          </button>
+          {selectedItem ? (
+            <>
               <div className="fragments-title-wrap">
                 <input
                   key={`${selectedItem.path}:${selectedItem.title}`}
@@ -1051,6 +1149,7 @@ function EditorPane() {
                 />
                 <small>{selectedItem.collection || "All Snippets"}</small>
               </div>
+              <GlobalSearch />
               <button
                 className={selectedItem.starred ? "starred" : ""}
                 title="Star fragment"
@@ -1081,7 +1180,19 @@ function EditorPane() {
               <button title="Move to trash" onClick={() => void trash()}>
                 <Trash2 size={16} />
               </button>
-            </header>
+            </>
+          ) : (
+            <>
+              <div className="fragments-title-wrap">
+                <strong>Fragments</strong>
+                <small>All Snippets</small>
+              </div>
+              <GlobalSearch />
+            </>
+          )}
+        </header>
+        {selectedItem ? (
+          <>
             <div className={`fragments-editor-workspace ${scratchOpen ? "has-scratchpad" : ""}`}>
               <div className="fragments-fragment-content">
                 <div className="fragments-properties">
