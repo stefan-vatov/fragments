@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/stefan-vatov/fragments/compare/1.0.0...1.0.1) (2026-09-24)
+
+### Bug Fixes
+
+- use Obsidian settings with folder suggestions ([03e6c59](https://github.com/stefan-vatov/fragments/commit/03e6c592679ee66a0b521b29b2701845ee383dd9))
+
 # 1.0.0 (2026-09-24)
 
 ### Features
