@@ -1,6 +1,6 @@
 {
   "name": "fragments",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A fast, local-first snippet library for Obsidian",
   "keywords": [
     "obsidian",
