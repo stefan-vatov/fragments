@@ -1,3 +1,9 @@
+# [1.4.0](https://github.com/stefan-vatov/fragments/compare/1.3.0...1.4.0) (2026-09-24)
+
+### Features
+
+- add shared fuzzy search across fragments ([77cb89e](https://github.com/stefan-vatov/fragments/commit/77cb89e69fe5f9f6d62d076165c1d39df1a5579b))
+
 # [1.3.0](https://github.com/stefan-vatov/fragments/compare/1.2.0...1.3.0) (2026-09-24)
 
 ### Features
