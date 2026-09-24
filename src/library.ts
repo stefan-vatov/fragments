@@ -17,6 +17,8 @@ export interface LibrarySettings {
   folder: string;
 }
 
+const SCRATCHPAD_NAME = "_fragments-scratchpad.md";
+
 const cleanFolder = (folder: string): string =>
   normalizePath(folder.trim()).replace(/^\/+|\/+$/g, "");
 const bodyOf = (source: string): string => {
@@ -84,8 +86,15 @@ export class FragmentLibrary {
   snapshot = (): number => this.revision;
   entries = (): Fragment[] => [...this.fragments.values()];
   folder = (): string => cleanFolder(this.settings.folder) || "Fragments";
-  contains = (path: string): boolean =>
-    path.startsWith(`${this.folder()}/`) && path.endsWith(".md");
+  scratchpadPath = (): string => `${this.folder()}/${SCRATCHPAD_NAME}`;
+  contains = (path: string): boolean => {
+    const folder = this.folder();
+    return (
+      path.startsWith(`${folder}/`) &&
+      path.endsWith(".md") &&
+      path !== `${folder}/${SCRATCHPAD_NAME}`
+    );
+  };
 
   async load(): Promise<void> {
     const generation = ++this.generation;
@@ -127,6 +136,35 @@ export class FragmentLibrary {
   async read(path: string): Promise<string> {
     const file = this.file(path);
     return bodyOf(await run(() => this.app.vault.cachedRead(file)));
+  }
+
+  async readScratchpad(path: string): Promise<string> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!file) return "";
+    if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
+    return run(() => this.app.vault.read(file));
+  }
+
+  async saveScratchpad(path: string, text: string, expected: string): Promise<void> {
+    await this.queue(path, async () => {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!file) {
+        if (expected) throw new Error("The scratchpad file was removed outside Fragments.");
+        await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
+        await run(() => this.app.vault.create(path, text));
+        return;
+      }
+      if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
+      await run(() =>
+        this.app.vault.process(file, (source) => {
+          if (source !== expected)
+            throw new Error(
+              "The scratchpad changed outside Fragments. Copy your text, then reopen Fragments before saving.",
+            );
+          return text;
+        }),
+      );
+    });
   }
 
   async create(collection = ""): Promise<string> {
@@ -188,6 +226,8 @@ export class FragmentLibrary {
     const safe = title.trim().replace(/[\\/:*?"<>|]/g, "-");
     if (!safe) throw new Error("Enter a title.");
     const next = `${file.parent?.path}/${safe}.md`;
+    if (next === this.scratchpadPath())
+      throw new Error("That title is reserved for the scratchpad.");
     if (next !== path && this.app.vault.getAbstractFileByPath(next))
       throw new Error("A fragment with that title already exists.");
     await run(() => this.app.fileManager.renameFile(file, next));
@@ -207,6 +247,8 @@ export class FragmentLibrary {
     const folder = collection ? `${this.folder()}/${collection}` : this.folder();
     await this.ensureFolder(folder);
     const next = `${folder}/${file.name}`;
+    if (next === this.scratchpadPath())
+      throw new Error("That filename is reserved for the scratchpad.");
     if (next !== path && this.app.vault.getAbstractFileByPath(next))
       throw new Error("A fragment with that title already exists there.");
     await run(() => this.app.fileManager.renameFile(file, next));

@@ -723,22 +723,169 @@ function ScratchpadToggle({ open, toggle }: { open: boolean; toggle: () => void 
   );
 }
 
-function Scratchpad({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+type ScratchpadStatus = "loading" | "dirty" | "saving" | "saved" | "error";
+
+interface ScratchpadSession {
+  path: string;
+  text: string;
+  saved: string;
+  ready: boolean;
+  conflicted: boolean;
+  pending: Promise<void>;
+  timer?: number;
+}
+
+function useScratchpad(library: FragmentLibrary, path: string) {
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState<ScratchpadStatus>("loading");
+  const session = useRef<ScratchpadSession | null>(null);
+
+  const flush = useCallback(
+    (current: ScratchpadSession) => {
+      if (current.timer !== undefined) window.clearTimeout(current.timer);
+      current.timer = undefined;
+      if (!current.ready || current.conflicted) return;
+      const next = current.text;
+      current.pending = current.pending
+        .then(async () => {
+          if (current.conflicted || next === current.saved) return;
+          if (session.current === current) setStatus("saving");
+          await library.saveScratchpad(current.path, next, current.saved);
+          current.saved = next;
+          if (session.current === current)
+            setStatus(current.text === current.saved ? "saved" : "dirty");
+        })
+        .catch((error: Error) => {
+          current.conflicted = true;
+          if (session.current === current) {
+            setStatus("error");
+            errorNotice(error);
+          }
+        });
+    },
+    [library],
+  );
+
+  useEffect(() => {
+    const current: ScratchpadSession = {
+      path,
+      text: "",
+      saved: "",
+      ready: false,
+      conflicted: false,
+      pending: Promise.resolve(),
+    };
+    session.current = current;
+    setText("");
+    setStatus("loading");
+    let active = true;
+    void library
+      .readScratchpad(path)
+      .then((loaded) => {
+        if (!active) return;
+        current.text = loaded;
+        current.saved = loaded;
+        current.ready = true;
+        setText(loaded);
+        setStatus("saved");
+      })
+      .catch((error: Error) => {
+        if (!active) return;
+        setStatus("error");
+        errorNotice(error);
+      });
+    return () => {
+      active = false;
+      flush(current);
+      if (session.current === current) session.current = null;
+    };
+  }, [library, path, flush]);
+
+  const editScratchpad = (value: string): void => {
+    const current = session.current;
+    if (!current?.ready) return;
+    current.text = value;
+    setText(value);
+    if (current.conflicted) return;
+    setStatus("dirty");
+    if (current.timer !== undefined) window.clearTimeout(current.timer);
+    current.timer = window.setTimeout(() => flush(current), 500);
+  };
+
+  const saveScratchpad = (): void => {
+    if (session.current) flush(session.current);
+  };
+
+  return {
+    text: session.current?.path === path ? text : "",
+    status: session.current?.path === path ? status : "loading",
+    editScratchpad,
+    saveScratchpad,
+  };
+}
+
+const scratchpadStatusText: Record<ScratchpadStatus, string> = {
+  loading: "Loading…",
+  dirty: "Unsaved changes",
+  saving: "Saving…",
+  saved: "Saved in vault",
+  error: "Could not save",
+};
+
+function Scratchpad({
+  text,
+  status,
+  onChange,
+  onSave,
+}: {
+  text: string;
+  status: ScratchpadStatus;
+  onChange: (text: string) => void;
+  onSave: () => void;
+}) {
   return (
     <section className="fragments-scratchpad" aria-label="Scratchpad">
       <header className="fragments-scratchpad-header">
         <strong>Scratchpad</strong>
-        <span>Temporary · not saved</span>
+        <span aria-live="polite" data-status={status}>
+          {scratchpadStatusText[status]}
+        </span>
       </header>
       <textarea
         className="fragments-scratchpad-editor"
         aria-label="Scratchpad text"
         spellCheck={false}
+        disabled={status === "loading"}
         value={text}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Type or paste here. Cleared when Fragments closes."
+        onBlur={onSave}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            event.stopPropagation();
+            onSave();
+          }
+        }}
+        placeholder="Type or paste here…"
       />
     </section>
+  );
+}
+
+function FragmentFooter() {
+  const { draft, dirty, selectedItem, save } = useAppContext();
+  if (!selectedItem) return null;
+  return (
+    <footer className="fragments-editor-footer">
+      <span>
+        {draft.length.toLocaleString()} chars ·{" "}
+        {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+      </span>
+      <span>{dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}</span>
+      <button disabled={!dirty} onClick={() => void save()}>
+        {dirty ? "Save changes" : "Saved"}
+      </button>
+    </footer>
   );
 }
 
@@ -762,13 +909,17 @@ function EditorPane() {
     edit,
     view,
     plugin,
-    save,
     createFragment,
   } = useAppContext();
   const [editingTags, setEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [scratchOpen, setScratchOpen] = useState(true);
-  const [scratchText, setScratchText] = useState("");
+  const {
+    text: scratchText,
+    status: scratchStatus,
+    editScratchpad,
+    saveScratchpad,
+  } = useScratchpad(library, library.scratchpadPath());
   const cancelTags = useRef(false);
   useEffect(() => {
     setEditingTags(false);
@@ -911,20 +1062,16 @@ function EditorPane() {
                     plugin={plugin}
                   />
                 )}
-                <footer className="fragments-editor-footer">
-                  <span>
-                    {draft.length.toLocaleString()} chars ·{" "}
-                    {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
-                  </span>
-                  <span>
-                    {dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}
-                  </span>
-                  <button disabled={!dirty} onClick={() => void save()}>
-                    {dirty ? "Save changes" : "Saved"}
-                  </button>
-                </footer>
+                <FragmentFooter />
               </div>
-              {scratchOpen && <Scratchpad text={scratchText} onChange={setScratchText} />}
+              {scratchOpen && (
+                <Scratchpad
+                  text={scratchText}
+                  status={scratchStatus}
+                  onChange={editScratchpad}
+                  onSave={saveScratchpad}
+                />
+              )}
             </div>
           </>
         ) : (

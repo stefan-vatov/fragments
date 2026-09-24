@@ -416,6 +416,9 @@
   font-size: 11px;
   white-space: nowrap;
 }
+.fragments-scratchpad-header [data-status="error"] {
+  color: #f08076;
+}
 .fragments-title-wrap {
   display: flex;
   flex: 1;
