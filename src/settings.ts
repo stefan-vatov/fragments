@@ -1,4 +1,12 @@
-import { App, Notice, PluginSettingTab, Setting, type TextComponent } from "obsidian";
+import {
+  App,
+  FuzzySuggestModal,
+  Notice,
+  PluginSettingTab,
+  Setting,
+  type FuzzyMatch,
+  type TextComponent,
+} from "obsidian";
 import { FolderSuggest } from "./folder-suggest";
 import type { LibrarySettings } from "./library";
 import type FragmentsPlugin from "./main";
@@ -16,6 +24,52 @@ export const DEFAULT_SETTINGS: FragmentsSettings = {
   customSnippetFont: "",
 };
 
+interface FontChoice {
+  label: string;
+  font: SnippetFont;
+  family?: string;
+}
+
+const BUILT_IN_FONTS: FontChoice[] = [
+  { label: "Obsidian monospace", font: "monospace" },
+  { label: "Obsidian text", font: "text" },
+  { label: "Obsidian interface", font: "interface" },
+  { label: "Serif", font: "serif" },
+];
+
+function quotedFontFamily(family: string): string {
+  return `"${family.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}", var(--font-monospace), monospace`;
+}
+
+class SnippetFontModal extends FuzzySuggestModal<FontChoice> {
+  constructor(
+    app: App,
+    private readonly choices: FontChoice[],
+    private readonly choose: (choice: FontChoice) => void,
+  ) {
+    super(app);
+    this.setPlaceholder("Search installed fonts…");
+    this.emptyStateText = "No matching fonts";
+  }
+
+  getItems(): FontChoice[] {
+    return this.choices;
+  }
+
+  getItemText(choice: FontChoice): string {
+    return choice.label;
+  }
+
+  renderSuggestion(match: FuzzyMatch<FontChoice>, el: HTMLElement): void {
+    super.renderSuggestion(match, el);
+    if (match.item.family) el.style.fontFamily = quotedFontFamily(match.item.family);
+  }
+
+  onChooseItem(choice: FontChoice): void {
+    this.choose(choice);
+  }
+}
+
 export function snippetFontFamily(
   settings: Pick<FragmentsSettings, "snippetFont" | "customSnippetFont">,
 ): string {
@@ -27,7 +81,9 @@ export function snippetFontFamily(
     case "serif":
       return 'Georgia, "Times New Roman", serif';
     case "custom":
-      return settings.customSnippetFont.trim() || "var(--font-monospace), monospace";
+      return settings.customSnippetFont.trim()
+        ? quotedFontFamily(settings.customSnippetFont.trim())
+        : "var(--font-monospace), monospace";
     case "monospace":
       return "var(--font-monospace), monospace";
   }
@@ -70,29 +126,15 @@ export class FragmentsSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Snippet font")
       .setDesc("Used for Markdown editing and preview in Fragments.")
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption("monospace", "Obsidian monospace")
-          .addOption("text", "Obsidian text")
-          .addOption("interface", "Obsidian interface")
-          .addOption("serif", "Serif")
-          .addOption("custom", "Custom font family")
-          .setValue(this.plugin.settings.snippetFont)
-          .onChange((value) => void this.updateFont(value as SnippetFont));
+      .addButton((button) => {
+        const selected = BUILT_IN_FONTS.find(
+          (choice) => choice.font === this.plugin.settings.snippetFont,
+        );
+        button
+          .setButtonText(selected?.label || this.plugin.settings.customSnippetFont || "Choose font")
+          .onClick(() => void this.openFontPicker());
+        button.buttonEl.style.fontFamily = snippetFontFamily(this.plugin.settings);
       });
-
-    if (this.plugin.settings.snippetFont === "custom") {
-      new Setting(containerEl)
-        .setName("Custom font family")
-        .setDesc("Enter the name of a font installed on this device.")
-        .addText((text) => {
-          text.setPlaceholder("Iosevka").setValue(this.plugin.settings.customSnippetFont);
-          text.inputEl.addEventListener("change", () => void this.updateCustomFont(text));
-          text.inputEl.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") text.inputEl.blur();
-          });
-        });
-    }
   }
 
   hide(): void {
@@ -122,28 +164,44 @@ export class FragmentsSettingTab extends PluginSettingTab {
     }
   }
 
-  private async updateFont(font: SnippetFont): Promise<void> {
-    const previous = this.plugin.settings.snippetFont;
-    this.plugin.settings.snippetFont = font;
+  private async openFontPicker(): Promise<void> {
+    const fontWindow = window as Window & {
+      queryLocalFonts?: () => Promise<{ family: string }[]>;
+    };
+    let families: string[] = [];
+    if (fontWindow.queryLocalFonts) {
+      try {
+        const fonts = await fontWindow.queryLocalFonts();
+        families = [...new Set(fonts.map((font) => font.family).filter(Boolean))].sort((a, b) =>
+          a.localeCompare(b),
+        );
+      } catch (error) {
+        new Notice(`Could not list installed fonts: ${String(error)}`);
+      }
+    }
+    const choices = [
+      ...BUILT_IN_FONTS,
+      ...families.map((family): FontChoice => ({ label: family, font: "custom", family })),
+    ];
+    if (this.plugin.settings.snippetFont === "custom" && this.plugin.settings.customSnippetFont) {
+      const family = this.plugin.settings.customSnippetFont;
+      if (!families.includes(family)) choices.push({ label: family, font: "custom", family });
+    }
+    new SnippetFontModal(this.app, choices, (choice) => void this.updateFont(choice)).open();
+  }
+
+  private async updateFont(choice: FontChoice): Promise<void> {
+    const previousFont = this.plugin.settings.snippetFont;
+    const previousFamily = this.plugin.settings.customSnippetFont;
+    this.plugin.settings.snippetFont = choice.font;
+    if (choice.family) this.plugin.settings.customSnippetFont = choice.family;
     try {
       await this.plugin.saveSettings();
     } catch (error) {
-      this.plugin.settings.snippetFont = previous;
+      this.plugin.settings.snippetFont = previousFont;
+      this.plugin.settings.customSnippetFont = previousFamily;
       new Notice(`Could not save the snippet font: ${String(error)}`);
     }
     this.display();
-  }
-
-  private async updateCustomFont(text: TextComponent): Promise<void> {
-    const previous = this.plugin.settings.customSnippetFont;
-    this.plugin.settings.customSnippetFont = text.getValue().trim();
-    try {
-      await this.plugin.saveSettings();
-      text.setValue(this.plugin.settings.customSnippetFont);
-    } catch (error) {
-      this.plugin.settings.customSnippetFont = previous;
-      text.setValue(previous);
-      new Notice(`Could not save the custom font: ${String(error)}`);
-    }
   }
 }
