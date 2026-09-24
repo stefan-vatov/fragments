@@ -191,19 +191,23 @@ function useDraft(library: FragmentLibrary, selected: string | null, modified: n
     [selected, library],
   );
 
-  const save = useCallback(async () => {
-    if (!selected || !dirty) return;
-    try {
-      await library.saveBody(selected, draft, body);
-      savedBody.current = draft;
-      setBody(draft);
-      setDirty(false);
-      pendingDraft.current = null;
-      new Notice("Fragment saved");
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  }, [selected, dirty, library, draft, body]);
+  const save = useCallback(
+    async (notify = true) => {
+      if (!selected || !dirty) return;
+      try {
+        await library.saveBody(selected, draft, body);
+        savedBody.current = draft;
+        setBody(draft);
+        setDirty(false);
+        pendingDraft.current = null;
+        if (notify) new Notice("Fragment saved");
+      } catch (error) {
+        if (!notify) throw error;
+        errorNotice(error as Error);
+      }
+    },
+    [selected, dirty, library, draft, body],
+  );
 
   const edit = (path: string, text: string): void => {
     pendingDraft.current = { path, text };
@@ -308,7 +312,11 @@ function useController({ plugin, view, handle }: Props) {
   const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">("list");
   const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
   const selectedItem = entries.find((item) => item.path === selected);
-  const { body, draft, dirty, save, edit } = useDraft(library, selected, selectedItem?.modified);
+  const { body, draft, dirty, save, edit } = useDraft(
+    library,
+    selectedItem?.path ?? null,
+    selectedItem?.modified,
+  );
   const tags = useMemo(() => countTags(entries), [entries]);
 
   const filtered = useMemo(
@@ -324,6 +332,9 @@ function useController({ plugin, view, handle }: Props) {
   const createFragment = useCallback(async () => {
     try {
       const path = await library.create(scope.kind === "collection" ? scope.value : "");
+      setScope(scope.kind === "collection" ? scope : { kind: "all" });
+      setQuery("");
+      setTagFilter("");
       setSelected(path);
       setMode("edit");
       setMobilePane("editor");
@@ -394,6 +405,7 @@ function useController({ plugin, view, handle }: Props) {
   const rename = async (value: string): Promise<void> => {
     if (!selectedItem || value.trim() === selectedItem.title) return;
     try {
+      await save(false);
       setSelected(await library.rename(selectedItem.path, value));
     } catch (error) {
       errorNotice(error as Error);
@@ -402,6 +414,7 @@ function useController({ plugin, view, handle }: Props) {
   const move = async (value: string): Promise<void> => {
     if (!selectedItem || value === selectedItem.collection) return;
     try {
+      await save(false);
       setSelected(await library.move(selectedItem.path, value));
     } catch (error) {
       errorNotice(error as Error);
@@ -737,7 +750,7 @@ function EditorPane() {
               </button>
               <div className="fragments-title-wrap">
                 <input
-                  key={selectedItem.path}
+                  key={`${selectedItem.path}:${selectedItem.title}`}
                   aria-label="Fragment title"
                   defaultValue={selectedItem.title}
                   onBlur={(event) => void rename(event.target.value)}
