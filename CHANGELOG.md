@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/stefan-vatov/fragments/compare/1.0.1...1.0.2) (2026-09-24)
+
+### Bug Fixes
+
+- select snippet fonts from installed families ([c836115](https://github.com/stefan-vatov/fragments/commit/c836115e269ad45d2bfed0a489d050361bf1242e))
+
 ## [1.0.1](https://github.com/stefan-vatov/fragments/compare/1.0.0...1.0.1) (2026-09-24)
 
 ### Bug Fixes
