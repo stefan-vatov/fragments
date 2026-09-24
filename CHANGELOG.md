@@ -1,3 +1,9 @@
+# [1.2.0](https://github.com/stefan-vatov/fragments/compare/1.1.0...1.2.0) (2026-09-24)
+
+### Features
+
+- persist shared scratchpad in vault ([2aa3330](https://github.com/stefan-vatov/fragments/commit/2aa33301447edfae8df8e69d7d1fe5c261158603))
+
 # [1.1.0](https://github.com/stefan-vatov/fragments/compare/1.0.3...1.1.0) (2026-09-24)
 
 ### Features
