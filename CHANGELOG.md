@@ -1,3 +1,9 @@
+# [1.3.0](https://github.com/stefan-vatov/fragments/compare/1.2.0...1.3.0) (2026-09-24)
+
+### Features
+
+- add language picker and syntax highlighting ([2716aff](https://github.com/stefan-vatov/fragments/commit/2716aff892dfff839b406b9475abe6ba41e01e79))
+
 # [1.2.0](https://github.com/stefan-vatov/fragments/compare/1.1.0...1.2.0) (2026-09-24)
 
 ### Features
