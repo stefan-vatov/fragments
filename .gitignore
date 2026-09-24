@@ -488,6 +488,8 @@ build/Release
 
 # Dependency directories
 node_modules/
+main.js
+data.json
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -526,6 +528,12 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

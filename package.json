@@ -1,0 +1,50 @@
+{
+  "name": "fragments",
+  "version": "0.1.0",
+  "description": "A fast, local-first snippet library for Obsidian",
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin"
+  ],
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "check": "pnpm run build && pnpm run lint && pnpm run format:check",
+    "release": "semantic-release",
+    "release:dry-run": "semantic-release --dry-run --no-ci",
+    "release:version": "node scripts/set-version.mjs",
+    "lint": "oxlint src --config oxlint.config.mjs --type-aware --type-check --deny-warnings",
+    "lint:fix": "oxlint src --config oxlint.config.mjs --type-aware --type-check --fix",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "^3.21.2",
+    "lucide-react": "^0.468.0",
+    "obsidian": "1.8.7",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.8",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "@thethracian/oxlint-config": "^0.8.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "esbuild": "^0.27.0",
+    "oxfmt": "^0.43.0",
+    "oxlint": "^1.58.0",
+    "oxlint-tsgolint": "^0.22.1",
+    "semantic-release": "^25.0.3",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@10.12.4"
+}
