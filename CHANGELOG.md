@@ -1,3 +1,9 @@
+# [1.5.0](https://github.com/stefan-vatov/fragments/compare/1.4.0...1.5.0) (2026-09-24)
+
+### Features
+
+- refine search and fragment controls ([5c45e50](https://github.com/stefan-vatov/fragments/commit/5c45e5064a23145ccff1d493c4b9ac1cb7369dc1))
+
 # [1.4.0](https://github.com/stefan-vatov/fragments/compare/1.3.0...1.4.0) (2026-09-24)
 
 ### Features
