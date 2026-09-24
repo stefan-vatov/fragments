@@ -16,11 +16,13 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  Eye,
   FilePlus2,
   Folder,
   Menu,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
   Plus,
   Search,
   Star,
@@ -807,7 +809,6 @@ function ScratchpadToggle({ open, toggle }: { open: boolean; toggle: () => void 
       onClick={toggle}
     >
       {open ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-      <span>Scratchpad</span>
     </button>
   );
 }
@@ -986,7 +987,7 @@ function GlobalSearch() {
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const results = useMemo(
-    () => (query.trim() ? searchFragments(searchIndex, { query, limit: 8 }) : []),
+    () => (query.trim() ? searchFragments(searchIndex, { query, limit: 12 }) : []),
     [searchIndex, query],
   );
 
@@ -999,6 +1000,13 @@ function GlobalSearch() {
     doc.addEventListener("pointerdown", closeOutside);
     return () => doc.removeEventListener("pointerdown", closeOutside);
   }, [open, view]);
+
+  useEffect(() => {
+    if (open)
+      root.current
+        ?.querySelector(`#fragments-global-result-${active}`)
+        ?.scrollIntoView({ block: "nearest" });
+  }, [active, open, query]);
 
   const select = (path: string): void => {
     chooseGlobal(path);
@@ -1035,6 +1043,12 @@ function GlobalSearch() {
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setActive((current) => Math.max(current - 1, 0));
+          } else if (event.key === "Home" && results.length) {
+            event.preventDefault();
+            setActive(0);
+          } else if (event.key === "End" && results.length) {
+            event.preventDefault();
+            setActive(results.length - 1);
           } else if (event.key === "Enter" && results[active]) {
             event.preventDefault();
             select(results[active].path);
@@ -1084,9 +1098,100 @@ function GlobalSearch() {
           ) : (
             <p className="fragments-global-no-results">No matching titles or tags</p>
           )}
+          {results.length > 0 && (
+            <div className="fragments-global-results-hint" aria-hidden="true">
+              ↑ ↓ Navigate · Enter Open · Esc Close
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function EditorToolbar({
+  scratchOpen,
+  toggleScratchpad,
+}: {
+  scratchOpen: boolean;
+  toggleScratchpad: () => void;
+}) {
+  const { selectedItem, setMobilePane, rename, toggleStar, mode, setMode, copy, trash } =
+    useAppContext();
+  return (
+    <header className="fragments-editor-header">
+      <button
+        className="fragments-back"
+        aria-label="Back to fragment list"
+        title="Back to fragment list"
+        onClick={() => setMobilePane("list")}
+      >
+        <ChevronRight size={17} />
+      </button>
+      {selectedItem ? (
+        <>
+          <div className="fragments-title-wrap">
+            <input
+              key={`${selectedItem.path}:${selectedItem.title}`}
+              aria-label="Fragment title"
+              defaultValue={selectedItem.title}
+              onBlur={(event) => void rename(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+            <small>{selectedItem.collection || "All Snippets"}</small>
+          </div>
+          <GlobalSearch />
+          <button
+            className={selectedItem.starred ? "starred" : ""}
+            aria-label={selectedItem.starred ? "Unstar fragment" : "Star fragment"}
+            title="Star fragment"
+            onClick={() => void toggleStar()}
+          >
+            <Star size={17} fill={selectedItem.starred ? "currentColor" : "none"} />
+          </button>
+          <button
+            className={mode === "edit" ? "mode-active" : ""}
+            aria-label="Edit fragment"
+            aria-pressed={mode === "edit"}
+            title="Edit"
+            onClick={() => setMode("edit")}
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            className={mode === "preview" ? "mode-active" : ""}
+            aria-label="Preview fragment"
+            aria-pressed={mode === "preview"}
+            title="Preview"
+            onClick={() => setMode("preview")}
+          >
+            <Eye size={17} />
+          </button>
+          <ScratchpadToggle open={scratchOpen} toggle={toggleScratchpad} />
+          <button
+            className="fragments-primary fragments-copy"
+            aria-label="Copy fragment"
+            title="Copy fragment"
+            onClick={() => void copy()}
+          >
+            <Copy size={16} />
+          </button>
+          <button title="Move to trash" onClick={() => void trash()}>
+            <Trash2 size={16} />
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="fragments-title-wrap">
+            <strong>Fragments</strong>
+            <small>All Snippets</small>
+          </div>
+          <GlobalSearch />
+        </>
+      )}
+    </header>
   );
 }
 
@@ -1094,13 +1199,7 @@ function EditorPane() {
   const {
     mobilePane,
     selectedItem,
-    setMobilePane,
-    rename,
-    toggleStar,
     mode,
-    setMode,
-    copy,
-    trash,
     updateTags,
     move,
     library,
@@ -1131,72 +1230,36 @@ function EditorPane() {
   return (
     <>
       <main className={`fragments-editor-pane ${mobilePane === "editor" ? "mobile-active" : ""}`}>
-        <header className="fragments-editor-header">
-          <button className="fragments-back" onClick={() => setMobilePane("list")}>
-            <ChevronRight size={17} />
-          </button>
-          {selectedItem ? (
-            <>
-              <div className="fragments-title-wrap">
-                <input
-                  key={`${selectedItem.path}:${selectedItem.title}`}
-                  aria-label="Fragment title"
-                  defaultValue={selectedItem.title}
-                  onBlur={(event) => void rename(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                  }}
-                />
-                <small>{selectedItem.collection || "All Snippets"}</small>
-              </div>
-              <GlobalSearch />
-              <button
-                className={selectedItem.starred ? "starred" : ""}
-                title="Star fragment"
-                onClick={() => void toggleStar()}
-              >
-                <Star size={17} fill={selectedItem.starred ? "currentColor" : "none"} />
-              </button>
-              <button
-                className={mode === "edit" ? "mode-active" : ""}
-                onClick={() => setMode("edit")}
-              >
-                Edit
-              </button>
-              <button
-                className={mode === "preview" ? "mode-active" : ""}
-                onClick={() => setMode("preview")}
-              >
-                Preview
-              </button>
-              <ScratchpadToggle open={scratchOpen} toggle={() => setScratchOpen((open) => !open)} />
-              <button
-                className="fragments-primary fragments-copy"
-                aria-label="Copy fragment"
-                onClick={() => void copy()}
-              >
-                <Copy size={14} /> Copy
-              </button>
-              <button title="Move to trash" onClick={() => void trash()}>
-                <Trash2 size={16} />
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="fragments-title-wrap">
-                <strong>Fragments</strong>
-                <small>All Snippets</small>
-              </div>
-              <GlobalSearch />
-            </>
-          )}
-        </header>
+        <EditorToolbar
+          scratchOpen={scratchOpen}
+          toggleScratchpad={() => setScratchOpen((open) => !open)}
+        />
         {selectedItem ? (
           <>
             <div className={`fragments-editor-workspace ${scratchOpen ? "has-scratchpad" : ""}`}>
               <div className="fragments-fragment-content">
                 <div className="fragments-properties">
-                  <div className="fragments-tags">
+                  <select
+                    aria-label="Collection"
+                    value={selectedItem.collection}
+                    onChange={(event) => void move(event.target.value)}
+                  >
+                    <option value="">No collection</option>
+                    {library.collections().map((collection) => (
+                      <option key={collection} value={collection}>
+                        {collection}
+                      </option>
+                    ))}
+                  </select>
+                  <LanguageInput
+                    key={`${selectedItem.path}:${selectedItem.language}`}
+                    item={selectedItem}
+                    library={library}
+                    plugin={plugin}
+                  />
+                  <div
+                    className={`fragments-tags ${selectedItem.tags.length || editingTags ? "has-tags" : ""}`}
+                  >
                     {selectedItem.tags.map((tag) => (
                       <span key={tag}>#{tag}</span>
                     ))}
@@ -1229,24 +1292,6 @@ function EditorPane() {
                       </button>
                     )}
                   </div>
-                  <select
-                    aria-label="Collection"
-                    value={selectedItem.collection}
-                    onChange={(event) => void move(event.target.value)}
-                  >
-                    <option value="">No collection</option>
-                    {library.collections().map((collection) => (
-                      <option key={collection} value={collection}>
-                        {collection}
-                      </option>
-                    ))}
-                  </select>
-                  <LanguageInput
-                    key={`${selectedItem.path}:${selectedItem.language}`}
-                    item={selectedItem}
-                    library={library}
-                    plugin={plugin}
-                  />
                 </div>
                 {mode === "edit" ? (
                   <HighlightedEditor
