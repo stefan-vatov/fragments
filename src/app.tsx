@@ -32,6 +32,7 @@ import type FragmentsPlugin from "./main";
 import type { FragmentsView } from "./view";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
+import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -226,20 +227,120 @@ function Preview({
   path,
   view,
   plugin,
+  language,
 }: {
   body: string;
   path: string;
   view: FragmentsView;
   plugin: FragmentsPlugin;
+  language: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
     element.empty();
-    void MarkdownRenderer.render(plugin.app, body, element, path, view);
-  }, [body, path, view, plugin]);
+    if (findLanguage(language)?.id === "markdown") {
+      void MarkdownRenderer.render(plugin.app, body, element, path, view);
+      return;
+    }
+    const code = element.createEl("pre").createEl("code");
+    highlightCode(code, body, language);
+  }, [body, path, view, plugin, language]);
   return <div className="fragments-preview markdown-rendered" ref={ref} />;
+}
+
+function HighlightedEditor({
+  body,
+  language,
+  onChange,
+}: {
+  body: string;
+  language: string;
+  onChange: (text: string) => void;
+}) {
+  const pre = useRef<HTMLPreElement>(null);
+  const code = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (code.current) highlightCode(code.current, body, language);
+  }, [body, language]);
+  return (
+    <div className="fragments-highlight-editor">
+      <pre ref={pre} aria-hidden="true">
+        <code ref={code} />
+      </pre>
+      <textarea
+        className="fragments-editor"
+        aria-label="Fragment text"
+        spellCheck={false}
+        value={body}
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={(event) => {
+          if (pre.current) {
+            pre.current.scrollTop = event.currentTarget.scrollTop;
+            pre.current.scrollLeft = event.currentTarget.scrollLeft;
+          }
+        }}
+        placeholder="Write your fragment…"
+      />
+    </div>
+  );
+}
+
+function LanguageInput({
+  item,
+  library,
+  plugin,
+}: {
+  item: Fragment;
+  library: FragmentLibrary;
+  plugin: FragmentsPlugin;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState(languageLabel(item.language));
+  const selected = useRef<string | null>(null);
+  const commit = useCallback(
+    (value: string) => {
+      const choice = findLanguage(value);
+      if (!choice) {
+        setText(languageLabel(item.language));
+        return;
+      }
+      setText(choice.label);
+      if (choice.id !== item.language)
+        void library.updateProperties(item.path, { language: choice.id }).catch(errorNotice);
+    },
+    [item.language, item.path, library],
+  );
+  useEffect(() => {
+    if (!ref.current) return undefined;
+    const suggest = new LanguageSuggest(plugin.app, ref.current, (choice) => {
+      selected.current = choice.id;
+      commit(choice.id);
+    });
+    return () => suggest.close();
+  }, [plugin.app, commit]);
+  return (
+    <input
+      ref={ref}
+      aria-label="Language"
+      title="Language"
+      value={text}
+      placeholder="Language"
+      autoComplete="off"
+      onChange={(event) => {
+        selected.current = null;
+        setText(event.target.value);
+      }}
+      onBlur={() => {
+        if (selected.current) {
+          selected.current = null;
+          return;
+        }
+        commit(text);
+      }}
+    />
+  );
 }
 
 function VirtualList({
@@ -1029,30 +1130,18 @@ function EditorPane() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    key={selectedItem.path}
-                    aria-label="Language"
-                    title="Language"
-                    defaultValue={selectedItem.language}
-                    placeholder="Language"
-                    onBlur={(event) => {
-                      void library
-                        .updateProperties(selectedItem.path, { language: event.target.value })
-                        .catch(errorNotice);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") event.currentTarget.blur();
-                    }}
+                  <LanguageInput
+                    key={`${selectedItem.path}:${selectedItem.language}`}
+                    item={selectedItem}
+                    library={library}
+                    plugin={plugin}
                   />
                 </div>
                 {mode === "edit" ? (
-                  <textarea
-                    className="fragments-editor"
-                    aria-label="Fragment Markdown"
-                    spellCheck={false}
-                    value={draft}
-                    onChange={(event) => edit(selectedItem.path, event.target.value)}
-                    placeholder="Write Markdown here…"
+                  <HighlightedEditor
+                    body={draft}
+                    language={selectedItem.language}
+                    onChange={(text) => edit(selectedItem.path, text)}
                   />
                 ) : (
                   <Preview
@@ -1060,6 +1149,7 @@ function EditorPane() {
                     path={selectedItem.path}
                     view={view}
                     plugin={plugin}
+                    language={selectedItem.language}
                   />
                 )}
                 <FragmentFooter />

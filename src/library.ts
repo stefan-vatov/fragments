@@ -61,7 +61,8 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
     title,
     tags: values.map((tag) => tag.replace(/^#/, "")).filter(Boolean),
     starred: Option.getOrElse(decodeBoolean(raw?.starred), () => false),
-    language: Option.getOrElse(decodeString(raw?.language), () => ""),
+    language:
+      Option.getOrElse(decodeString(raw?.language), () => "plaintext").trim() || "plaintext",
   };
 }
 
@@ -177,7 +178,7 @@ export class FragmentLibrary {
     const file = await run(() =>
       this.app.vault.create(
         path,
-        `---\ntitle: ${JSON.stringify(path.split("/").pop()?.slice(0, -3))}\ntags: []\nstarred: false\n---\n\n`,
+        `---\ntitle: ${JSON.stringify(path.split("/").pop()?.slice(0, -3))}\ntags: []\nstarred: false\nlanguage: plaintext\n---\n\n`,
       ),
     );
     await this.refresh(file);

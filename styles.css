@@ -482,19 +482,59 @@
   color: var(--frag-muted);
   font-size: 11px;
 }
-.fragments-app textarea.fragments-editor {
+.fragments-highlight-editor {
+  position: relative;
   flex: 1;
   width: 100%;
   min-height: 0;
+  overflow: hidden;
+  background: var(--frag-editor);
+}
+.fragments-highlight-editor pre,
+.fragments-app textarea.fragments-editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   resize: none;
   padding: 26px 30px;
   border: 0;
-  background: var(--frag-editor);
-  color: #d3d3d3;
+  border-radius: 0;
+  background: transparent;
   font-family: var(--frag-snippet-font, var(--font-monospace)) !important;
   font-size: 14px;
   line-height: 1.75;
   tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: auto;
+}
+.fragments-highlight-editor pre {
+  pointer-events: none;
+  color: #d3d3d3;
+}
+.fragments-highlight-editor code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+.fragments-app textarea.fragments-editor {
+  color: transparent;
+  caret-color: var(--frag-accent);
+  -webkit-text-fill-color: transparent;
+}
+.fragments-app textarea.fragments-editor::placeholder {
+  color: var(--frag-subtle);
+  -webkit-text-fill-color: var(--frag-subtle);
+}
+.fragments-app textarea.fragments-editor::selection {
+  background: #f0a50066;
+  -webkit-text-fill-color: transparent;
 }
 .fragments-preview {
   flex: 1;
@@ -516,6 +556,52 @@
 .fragments-preview pre {
   border: 1px solid #333;
   background: #181818 !important;
+}
+.fragments-preview > pre {
+  margin: 0;
+  border: 0;
+  background: transparent !important;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.fragments-preview > pre > code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+.fragments-app .hljs-comment,
+.fragments-app .hljs-quote {
+  color: #8d9a89;
+}
+.fragments-app .hljs-keyword,
+.fragments-app .hljs-selector-tag,
+.fragments-app .hljs-literal {
+  color: #d59ad8;
+}
+.fragments-app .hljs-string,
+.fragments-app .hljs-regexp,
+.fragments-app .hljs-attr {
+  color: #b6d58d;
+}
+.fragments-app .hljs-number,
+.fragments-app .hljs-symbol,
+.fragments-app .hljs-bullet {
+  color: #dfaf77;
+}
+.fragments-app .hljs-title,
+.fragments-app .hljs-built_in,
+.fragments-app .hljs-type {
+  color: #8bc8e8;
+}
+.fragments-app .hljs-variable,
+.fragments-app .hljs-params,
+.fragments-app .hljs-meta {
+  color: #e3bd7b;
 }
 .fragments-app textarea.fragments-scratchpad-editor {
   flex: 1;
@@ -769,6 +855,7 @@
   .fragments-title-wrap input {
     font-size: 15px;
   }
+  .fragments-highlight-editor pre,
   .fragments-app textarea.fragments-editor,
   .fragments-preview,
   .fragments-app textarea.fragments-scratchpad-editor {
