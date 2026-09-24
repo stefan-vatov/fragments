@@ -1,3 +1,9 @@
+# [1.1.0](https://github.com/stefan-vatov/fragments/compare/1.0.3...1.1.0) (2026-09-24)
+
+### Features
+
+- add temporary shared scratchpad beside fragments ([0f8c117](https://github.com/stefan-vatov/fragments/commit/0f8c117b3ff4f6e2c44423ad3b1430a1fdd6b026))
+
 ## [1.0.3](https://github.com/stefan-vatov/fragments/compare/1.0.2...1.0.3) (2026-09-24)
 
 ### Bug Fixes
