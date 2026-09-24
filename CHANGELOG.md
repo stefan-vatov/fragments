@@ -1,3 +1,9 @@
+## [1.0.3](https://github.com/stefan-vatov/fragments/compare/1.0.2...1.0.3) (2026-09-24)
+
+### Bug Fixes
+
+- keep fragment title and draft in sync on rename ([2978b1b](https://github.com/stefan-vatov/fragments/commit/2978b1b575ec8468c7020c859b0de6198e832806))
+
 ## [1.0.2](https://github.com/stefan-vatov/fragments/compare/1.0.1...1.0.2) (2026-09-24)
 
 ### Bug Fixes
