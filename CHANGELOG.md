@@ -1,3 +1,9 @@
+## [1.5.1](https://github.com/stefan-vatov/fragments/compare/1.5.0...1.5.1) (2026-10-24)
+
+### Bug Fixes
+
+- correct list spacing and add headless obsidian testing ([4482f32](https://github.com/stefan-vatov/fragments/commit/4482f32a959484a51ffc09983daf4102538c35ff))
+
 # [1.5.0](https://github.com/stefan-vatov/fragments/compare/1.4.0...1.5.0) (2026-09-24)
 
 ### Features
