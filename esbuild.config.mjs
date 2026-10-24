@@ -8,7 +8,7 @@ const context = await esbuild.context({
   external: ["obsidian", "electron", ...builtinModules],
   format: "cjs",
   target: "es2020",
-  outfile: "main.js",
+  outfile: process.env.FRAGMENTS_BUILD_OUTFILE ?? "main.js",
   sourcemap: production ? false : "inline",
   minify: production,
   logLevel: "info",

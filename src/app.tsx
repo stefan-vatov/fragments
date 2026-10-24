@@ -348,7 +348,7 @@ function VirtualList({
             onClick={() => select(item.path)}
           >
             <span className="fragments-result-title">
-              {item.title}
+              <span className="fragments-result-name">{item.title}</span>
               {item.starred && <Star size={12} fill="currentColor" />}
             </span>
             <span className="fragments-result-preview">{item.preview || "No content yet"}</span>

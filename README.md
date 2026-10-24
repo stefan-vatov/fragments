@@ -30,6 +30,6 @@ pnpm run check
 
 The build produces `main.js` in the repository root. The plugin requires `manifest.json`, `main.js`, and `styles.css`. The local workbench vault is `../test-vault` and its plugin directory is symlinked to this repository at `../test-vault/.obsidian/plugins/fragments`. Open that vault in Obsidian and enable Fragments. Changes to `main.js` or `styles.css` can be reloaded with Hot Reload if installed; reload Obsidian after changing the manifest.
 
-For isolated checks in a real Obsidian process, follow [the local testing guide](docs/local-testing.md).
+Automated Obsidian tests run headlessly with a disposable vault and profile, without opening desktop windows. Build into that session with `FRAGMENTS_BUILD_OUTFILE` so testing cannot hot-reload a plugin linked into your normal vault. For the setup and checks, follow [the local testing guide](docs/local-testing.md).
 
 No note content leaves the vault. Fragments has no telemetry or network calls.
