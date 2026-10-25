@@ -428,7 +428,7 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
     const source = selectedItem.path;
     const tags = value
       .split(",")
-      .map((tag) => tag.trim().replace(/^#/, ""))
+      .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
       .filter(Boolean);
     try {
       await enqueue(() => library.updateProperties(resolvePath(source), { tags }));

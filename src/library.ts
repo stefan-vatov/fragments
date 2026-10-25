@@ -64,9 +64,11 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
   // whitespace must stay inside a tag for the round-trip to be lossless.
   const values = Schema.is(Schema.String)(tagValue) ? tagValue.split(",") : tagValue;
   const title = Option.getOrUndefined(decodeString(raw?.title));
+  // Tags are case-insensitive (as in Obsidian). Canonicalise once here so the
+  // sidebar counts, the tag scope filter and search all agree on one value.
   return {
     title,
-    tags: values.map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean),
+    tags: values.map((tag) => tag.trim().replace(/^#/, "").toLowerCase()).filter(Boolean),
     starred: Option.getOrElse(decodeBoolean(raw?.starred), () => false),
     language:
       Option.getOrElse(decodeString(raw?.language), () => "plaintext").trim() || "plaintext",
