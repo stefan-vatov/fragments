@@ -22,7 +22,9 @@ const languageChoices: LanguageChoice[] = [
 
 export function findLanguage(value: string): LanguageChoice | undefined {
   const search = value.trim().toLowerCase();
-  if (!search) return languageChoices[0];
+  // Empty input is "no choice": callers rely on `undefined` to revert instead
+  // of silently writing plaintext over the fragment's language.
+  if (!search) return undefined;
   return languageChoices.find(
     (choice) =>
       choice.id === search ||
