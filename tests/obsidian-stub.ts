@@ -100,3 +100,17 @@ export class Setting {
     return this;
   }
 }
+
+export class Plugin {
+  constructor(
+    readonly app: App,
+    readonly manifest: unknown,
+  ) {}
+  async saveData(_data: unknown): Promise<void> {}
+}
+
+export class ItemView {
+  readonly containerEl: HTMLElement = document.body;
+  readonly contentEl: HTMLElement = document.createElement("div");
+  constructor(readonly leaf: unknown) {}
+}

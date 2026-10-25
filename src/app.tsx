@@ -42,6 +42,7 @@ import { indexFragments, searchFragments, type SearchScope } from "./search";
 export interface ShellHandle {
   createFragment: () => Promise<void>;
   openPalette: () => void;
+  saveDraft: () => Promise<void>;
 }
 
 interface Props {
@@ -534,9 +535,13 @@ function useController({ plugin, view, handle }: Props) {
   }, [library, scope, view]);
 
   useEffect(() => {
-    handle({ createFragment, openPalette: () => setDialog("palette") });
+    handle({
+      createFragment,
+      openPalette: () => setDialog("palette"),
+      saveDraft: () => save(false),
+    });
     return () => handle(null);
-  }, [createFragment, handle]);
+  }, [createFragment, handle, save]);
 
   useKeyboard(view, save, setDialog);
 

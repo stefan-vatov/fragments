@@ -146,6 +146,14 @@ export class FragmentsSettingTab extends PluginSettingTab {
     const previous = this.plugin.settings.folder;
     text.inputEl.disabled = true;
     try {
+      await this.plugin.flushDrafts();
+    } catch (error) {
+      text.inputEl.disabled = false;
+      text.setValue(previous);
+      new Notice(`Save the open draft before changing the Fragments folder: ${String(error)}`);
+      return;
+    }
+    try {
       await this.plugin.library.changeFolder(text.getValue());
       await this.plugin.saveSettings();
       text.setValue(this.plugin.settings.folder);

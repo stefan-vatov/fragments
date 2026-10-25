@@ -97,6 +97,14 @@ export default class FragmentsPlugin extends Plugin {
     for (const listener of this.settingsListeners) listener();
   }
 
+  // Flush every open editor before the library switches folders: a draft is
+  // only writable while its path is still inside the current folder scope.
+  async flushDrafts(): Promise<void> {
+    for (const leaf of this.app.workspace.getLeavesOfType(FRAGMENTS_VIEW)) {
+      if (leaf.view instanceof FragmentsView) await leaf.view.saveDraft();
+    }
+  }
+
   activateView(): Promise<WorkspaceLeaf | undefined> {
     this.activation = this.activation.catch(() => undefined).then(() => this.openView());
     return this.activation;

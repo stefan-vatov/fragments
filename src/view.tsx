@@ -52,4 +52,7 @@ export class FragmentsView extends ItemView {
   openPalette(): void {
     this.shell?.openPalette();
   }
+  async saveDraft(): Promise<void> {
+    await this.shell?.saveDraft();
+  }
 }
