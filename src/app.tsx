@@ -224,14 +224,26 @@ function Preview({
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = ref.current;
-    if (!element) return;
-    element.empty();
+    if (!element) return undefined;
+    element.replaceChildren();
     if (findLanguage(language)?.id === "markdown") {
-      void MarkdownRenderer.render(plugin.app, body, element, path, view);
-      return;
+      // MarkdownRenderer.render resolves asynchronously, so a render for a
+      // fragment the user already left must not write into the live element.
+      // Render into a detached staging node and swap it in only if this effect
+      // is still current.
+      const staging = element.ownerDocument.createElement("div");
+      let cancelled = false;
+      void MarkdownRenderer.render(plugin.app, body, staging, path, view).then(() => {
+        if (cancelled || !ref.current) return;
+        ref.current.replaceChildren(...staging.childNodes);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
     const code = element.createEl("pre").createEl("code");
     highlightCode(code, body, language);
+    return undefined;
   }, [body, path, view, plugin, language]);
   return <div className="fragments-preview markdown-rendered" ref={ref} />;
 }

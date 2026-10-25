@@ -51,7 +51,13 @@ export class Notice {
 export const Platform = { isMacOS: false };
 
 export const MarkdownRenderer = {
-  render: async (): Promise<void> => undefined,
+  render: async (
+    _app: App,
+    _markdown: string,
+    _element: HTMLElement,
+    _sourcePath: string,
+    _component: unknown,
+  ): Promise<void> => undefined,
 };
 
 export class AbstractInputSuggest<T> {
