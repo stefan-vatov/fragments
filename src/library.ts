@@ -261,13 +261,24 @@ export class FragmentLibrary {
     if (next !== path && this.app.vault.getAbstractFileByPath(next))
       throw new Error("A fragment with that title already exists.");
     await run(() => this.app.fileManager.renameFile(file, next));
-    await run(() =>
-      this.app.fileManager.processFrontMatter(file, (matter) => {
-        const frontmatter = matter as { title?: string };
-        frontmatter.title = title.trim();
-      }),
-    );
+    // The file has moved, so re-index it before touching the frontmatter: a
+    // rejected frontmatter write must not leave a ghost entry for the old path
+    // while the renamed file stays invisible.
     this.remove(path);
+    await this.refresh(file);
+    try {
+      await run(() =>
+        this.app.fileManager.processFrontMatter(file, (matter) => {
+          const frontmatter = matter as { title?: string };
+          frontmatter.title = title.trim();
+        }),
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`The note was renamed, but its title was not saved: ${reason}`, {
+        cause: error,
+      });
+    }
     await this.refresh(file);
     return file.path;
   }
