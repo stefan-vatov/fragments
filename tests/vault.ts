@@ -129,7 +129,11 @@ export function createTestVault(): TestVault {
         const entry = files.get(file.path);
         if (!entry) return null;
         const frontmatter = parseFrontmatter(entry.text);
-        return frontmatter ? { frontmatter } : null;
+        if (!frontmatter) return null;
+        // Obsidian collapses a single-element tag sequence to a plain scalar.
+        const tags = frontmatter.tags;
+        if (Array.isArray(tags) && tags.length === 1) frontmatter.tags = tags[0];
+        return { frontmatter };
       },
     } as unknown as MetadataCache,
     fileManager: {

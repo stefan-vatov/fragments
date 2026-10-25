@@ -60,11 +60,13 @@ interface ParsedMetadata {
 
 function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
   const tagValue = Option.getOrElse(decodeTags(raw?.tags), () => [] as string[]);
-  const values = Schema.is(Schema.String)(tagValue) ? tagValue.split(/[,\s]+/) : tagValue;
+  // Split scalar tags on commas only: the write path joins tags with commas, so
+  // whitespace must stay inside a tag for the round-trip to be lossless.
+  const values = Schema.is(Schema.String)(tagValue) ? tagValue.split(",") : tagValue;
   const title = Option.getOrUndefined(decodeString(raw?.title));
   return {
     title,
-    tags: values.map((tag) => tag.replace(/^#/, "")).filter(Boolean),
+    tags: values.map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean),
     starred: Option.getOrElse(decodeBoolean(raw?.starred), () => false),
     language:
       Option.getOrElse(decodeString(raw?.language), () => "plaintext").trim() || "plaintext",
