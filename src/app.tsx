@@ -111,8 +111,16 @@ function useDraft(library: FragmentLibrary, selected: string | null, modified: n
 
   useEffect(() => {
     if (!selected) {
+      // The buffer, its dirty flag and the loaded-path marker describe one
+      // fragment together. Resetting only the buffer leaves `dirty` stale and
+      // `loadedPath` pointing at the old path, so the load guard below refuses
+      // to reload that path and the editor stays blank but still "unsaved".
+      loadedPath.current = null;
+      savedBody.current = "";
+      pendingDraft.current = null;
       setBody("");
       setDraft("");
+      setDirty(false);
       return undefined;
     }
     let active = true;
