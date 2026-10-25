@@ -1,5 +1,7 @@
 import {
   type CSSProperties,
+  type Dispatch,
+  type SetStateAction,
   createContext,
   useCallback,
   useContext,
@@ -375,6 +377,101 @@ function VirtualList({
   );
 }
 
+interface FragmentMutations {
+  library: FragmentLibrary;
+  selectedItem: Fragment | undefined;
+  save: (notify?: boolean) => Promise<void>;
+  setSelected: Dispatch<SetStateAction<string | null>>;
+}
+
+function useFragmentMutations({ library, selectedItem, save, setSelected }: FragmentMutations) {
+  // Rename/move/trash run asynchronously, and a blur on the title input can
+  // start one while the user is already clicking something else. Serialise
+  // path mutations and remember how each rename relocated a fragment, so a
+  // trailing mutation targets the fragment it was issued for instead of a
+  // stale path.
+  const mutations = useRef<Promise<void>>(Promise.resolve());
+  const relocated = useRef(new Map<string, string>());
+  const resolvePath = (path: string): string => {
+    let current = path;
+    for (;;) {
+      const next = relocated.current.get(current);
+      if (!next || next === current) return current;
+      current = next;
+    }
+  };
+  const enqueue = (task: () => Promise<void>): Promise<void> => {
+    const run = mutations.current.then(task, task);
+    mutations.current = run.catch(() => undefined);
+    return run;
+  };
+  const toggleStar = async (): Promise<void> => {
+    if (!selectedItem) return;
+    const source = selectedItem.path;
+    const starred = !selectedItem.starred;
+    try {
+      await enqueue(() => library.updateProperties(resolvePath(source), { starred }));
+    } catch (error) {
+      errorNotice(error as Error);
+    }
+  };
+  const updateTags = async (value: string): Promise<void> => {
+    if (!selectedItem) return;
+    const source = selectedItem.path;
+    const tags = value
+      .split(",")
+      .map((tag) => tag.trim().replace(/^#/, ""))
+      .filter(Boolean);
+    try {
+      await enqueue(() => library.updateProperties(resolvePath(source), { tags }));
+    } catch (error) {
+      errorNotice(error as Error);
+    }
+  };
+  const rename = async (value: string): Promise<void> => {
+    if (!selectedItem || value.trim() === selectedItem.title) return;
+    const source = selectedItem.path;
+    try {
+      await enqueue(async () => {
+        await save(false);
+        const next = await library.rename(resolvePath(source), value);
+        relocated.current.set(source, next);
+        setSelected((current) => (current === source ? next : current));
+      });
+    } catch (error) {
+      errorNotice(error as Error);
+    }
+  };
+  const move = async (value: string): Promise<void> => {
+    if (!selectedItem || value === selectedItem.collection) return;
+    const source = selectedItem.path;
+    try {
+      await enqueue(async () => {
+        await save(false);
+        const next = await library.move(resolvePath(source), value);
+        relocated.current.set(source, next);
+        setSelected((current) => (current === source ? next : current));
+      });
+    } catch (error) {
+      errorNotice(error as Error);
+    }
+  };
+  const trash = async (): Promise<void> => {
+    if (!selectedItem || !window.confirm(`Move “${selectedItem.title}” to trash?`)) return;
+    const source = selectedItem.path;
+    try {
+      await enqueue(async () => {
+        const target = resolvePath(source);
+        await library.trash(target);
+        setSelected((current) => (current === source || current === target ? null : current));
+      });
+    } catch (error) {
+      errorNotice(error as Error);
+    }
+  };
+  return { toggleStar, updateTags, rename, move, trash };
+}
+
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
@@ -397,6 +494,12 @@ function useController({ plugin, view, handle }: Props) {
     selectedItem?.path ?? null,
     selectedItem?.modified,
   );
+  const { toggleStar, updateTags, rename, move, trash } = useFragmentMutations({
+    library,
+    selectedItem,
+    save,
+    setSelected,
+  });
   const tags = useMemo(() => countTags(entries), [entries]);
   const searchIndex = useMemo(() => indexFragments(entries), [entries]);
 
@@ -464,54 +567,6 @@ function useController({ plugin, view, handle }: Props) {
     try {
       await navigator.clipboard.writeText(draft);
       new Notice("Copied fragment");
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-  const toggleStar = async (): Promise<void> => {
-    if (!selectedItem) return;
-    try {
-      await library.updateProperties(selectedItem.path, { starred: !selectedItem.starred });
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-  const updateTags = async (value: string): Promise<void> => {
-    if (!selectedItem) return;
-    try {
-      await library.updateProperties(selectedItem.path, {
-        tags: value
-          .split(",")
-          .map((tag) => tag.trim().replace(/^#/, ""))
-          .filter(Boolean),
-      });
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-  const rename = async (value: string): Promise<void> => {
-    if (!selectedItem || value.trim() === selectedItem.title) return;
-    try {
-      await save(false);
-      setSelected(await library.rename(selectedItem.path, value));
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-  const move = async (value: string): Promise<void> => {
-    if (!selectedItem || value === selectedItem.collection) return;
-    try {
-      await save(false);
-      setSelected(await library.move(selectedItem.path, value));
-    } catch (error) {
-      errorNotice(error as Error);
-    }
-  };
-  const trash = async (): Promise<void> => {
-    if (!selectedItem || !window.confirm(`Move “${selectedItem.title}” to trash?`)) return;
-    try {
-      await library.trash(selectedItem.path);
-      setSelected(null);
     } catch (error) {
       errorNotice(error as Error);
     }
