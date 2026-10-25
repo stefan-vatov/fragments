@@ -581,7 +581,10 @@ function useController({ plugin, view, handle }: Props) {
   const choosePalette = (index: number): void => {
     const item = paletteItems[index];
     if (item) {
-      choose(item.path);
+      // The palette lists the whole library, so a pick must cross the active
+      // filter the same way the header search does; otherwise the auto-select
+      // effect replaces the pick with the first fragment still in scope.
+      chooseGlobal(item.path);
       setDialog(null);
       return;
     }
