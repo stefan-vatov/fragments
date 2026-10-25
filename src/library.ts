@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Option, Schema } from "effect";
 import { getFrontMatterInfo, normalizePath, TFile, TFolder, type App } from "obsidian";
 
 export interface Fragment {
@@ -31,8 +31,13 @@ const plainPreview = (body: string): string =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 140);
-const run = <A>(operation: () => Promise<A>): Promise<A> =>
-  Effect.runPromise(Effect.tryPromise(operation));
+const run = async <A>(operation: () => Promise<A>): Promise<A> => {
+  try {
+    return await operation();
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
 const decodeString = Schema.decodeUnknownOption(Schema.String);
 const decodeBoolean = Schema.decodeUnknownOption(Schema.Boolean);
 const decodeTags = Schema.decodeUnknownOption(
