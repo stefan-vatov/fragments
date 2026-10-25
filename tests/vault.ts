@@ -22,6 +22,56 @@ export interface TestVaultApi {
 
 const folderOf = (path: string): string => path.split("/").slice(0, -1).join("/");
 
+interface FrontmatterRecord {
+  [key: string]: unknown;
+}
+
+const unquote = (value: string): string =>
+  (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))
+    ? value.slice(1, -1)
+    : value;
+
+const parseValue = (raw: string): unknown => {
+  const value = raw.trim();
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim();
+    if (!inner) return [];
+    return inner.split(",").map((item) => unquote(item.trim()));
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
+  return unquote(value);
+};
+
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
+const parseFrontmatter = (text: string): FrontmatterRecord | null => {
+  const match = FRONTMATTER.exec(text);
+  if (!match) return null;
+  const record: FrontmatterRecord = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const entry = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+    if (entry) record[entry[1]] = parseValue(entry[2]);
+  }
+  return record;
+};
+
+const serializeValue = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map((item) => String(item)).join(", ")}]`;
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  return JSON.stringify(String(value ?? ""));
+};
+
+const withFrontmatter = (text: string, record: FrontmatterRecord): string => {
+  const match = FRONTMATTER.exec(text);
+  const body = match ? text.slice(match[0].length) : text;
+  const header = Object.entries(record)
+    .map(([key, value]) => `${key}: ${serializeValue(value)}`)
+    .join("\n");
+  return `---\n${header}\n---\n${body}`;
+};
+
 export function createTestVault(): TestVault {
   const files = new Map<string, { file: TFile; text: string }>();
   const folders = new Map<string, TFolder>();
@@ -72,9 +122,22 @@ export function createTestVault(): TestVault {
 
   const app = {
     vault: vault as unknown as Vault,
-    metadataCache: { getFileCache: () => null } as unknown as MetadataCache,
+    metadataCache: {
+      getFileCache: (file: TFile) => {
+        const entry = files.get(file.path);
+        if (!entry) return null;
+        const frontmatter = parseFrontmatter(entry.text);
+        return frontmatter ? { frontmatter } : null;
+      },
+    } as unknown as MetadataCache,
     fileManager: {
-      processFrontMatter: async (): Promise<void> => undefined,
+      processFrontMatter: async (file: TFile, fn: (data: FrontmatterRecord) => void) => {
+        const entry = files.get(file.path);
+        if (!entry) throw new Error("file is missing");
+        const record = parseFrontmatter(entry.text) ?? {};
+        fn(record);
+        entry.text = withFrontmatter(entry.text, record);
+      },
       renameFile: async (): Promise<void> => undefined,
       trashFile: async (): Promise<void> => undefined,
     },

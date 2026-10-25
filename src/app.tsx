@@ -513,10 +513,19 @@ function useController({ plugin, view, handle }: Props) {
     [searchIndex, scope, tagFilter, query, sort],
   );
 
+  const filterKey = JSON.stringify([scope, tagFilter, query, sort]);
+  const previousFilter = useRef(filterKey);
   useEffect(() => {
+    const filterChanged = previousFilter.current !== filterKey;
+    previousFilter.current = filterKey;
     if (selected && filtered.some((item) => item.path === selected)) return;
+    // Entries also change when the user acts on the open fragment (star, tag,
+    // body edit). Keep the editor on a fragment that still exists instead of
+    // diverting the next keystrokes into a different note; only a filter change
+    // or a vanished fragment may move the selection.
+    if (!filterChanged && selected && entries.some((item) => item.path === selected)) return;
     setSelected(filtered[0]?.path ?? null);
-  }, [selected, entries, filtered]);
+  }, [selected, entries, filtered, filterKey]);
 
   const createFragment = useCallback(async () => {
     try {
