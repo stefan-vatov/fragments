@@ -353,6 +353,7 @@ function VirtualList({
   const viewport = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
+  const rowHeight = 88;
   useEffect(() => {
     const node = viewport.current;
     if (!node) return undefined;
@@ -360,9 +361,19 @@ function VirtualList({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const rowHeight = 88;
-  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 4);
-  const end = Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight) + 4);
+  useEffect(() => {
+    const node = viewport.current;
+    if (!node) return;
+    // The spacer shrinks with the list; an offset past its end would render an
+    // empty window even though matches exist.
+    const max = Math.max(0, items.length * rowHeight - height);
+    if (node.scrollTop > max) node.scrollTop = max;
+    setScrollTop((current) => Math.min(current, max));
+  }, [items.length, height, rowHeight]);
+  // Clamp the window for the render that happens before the reset effect runs.
+  const offset = Math.min(scrollTop, Math.max(0, items.length * rowHeight - height));
+  const start = Math.max(0, Math.floor(offset / rowHeight) - 4);
+  const end = Math.min(items.length, Math.ceil((offset + height) / rowHeight) + 4);
   return (
     <div
       className="fragments-results"
