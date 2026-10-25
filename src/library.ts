@@ -257,24 +257,35 @@ export class FragmentLibrary {
 
   async rename(path: string, title: string): Promise<string> {
     const file = this.file(path);
-    const safe = title.trim().replace(/[\\/:*?"<>|]/g, "-");
+    const requested = title.trim();
+    const safe = requested.replace(/[\\/:*?"<>|]/g, "-");
     if (!safe) throw new Error("Enter a title.");
-    const next = `${file.parent?.path}/${safe}.md`;
+    // The title is the fragment's identity; the filename is only a projection
+    // of it. Refuse a rename only when another fragment actually holds this
+    // title, not when a different title merely sanitises to the same filename.
+    if (this.entries().some((entry) => entry.path !== path && entry.title === requested))
+      throw new Error("A fragment with that title already exists.");
+    const parent = file.parent?.path ?? this.folder();
+    let next = `${parent}/${safe}.md`;
     if (next === this.scratchpadPath())
       throw new Error("That title is reserved for the scratchpad.");
-    if (next !== path && this.app.vault.getAbstractFileByPath(next))
-      throw new Error("A fragment with that title already exists.");
-    await run(() => this.app.fileManager.renameFile(file, next));
-    // The file has moved, so re-index it before touching the frontmatter: a
-    // rejected frontmatter write must not leave a ghost entry for the old path
-    // while the renamed file stays invisible.
-    this.remove(path);
-    await this.refresh(file);
+    // Two free titles can share a sanitised filename (a/b and a-b both want
+    // a-b.md). Disambiguate the file instead of refusing a title nobody holds.
+    for (let suffix = 2; next !== path && this.app.vault.getAbstractFileByPath(next); suffix++)
+      next = `${parent}/${safe} ${suffix}.md`;
+    if (next !== path) {
+      await run(() => this.app.fileManager.renameFile(file, next));
+      // The file has moved, so re-index it before touching the frontmatter: a
+      // rejected frontmatter write must not leave a ghost entry for the old path
+      // while the renamed file stays invisible.
+      this.remove(path);
+      await this.refresh(file);
+    }
     try {
       await run(() =>
         this.app.fileManager.processFrontMatter(file, (matter) => {
           const frontmatter = matter as { title?: string };
-          frontmatter.title = title.trim();
+          frontmatter.title = requested;
         }),
       );
     } catch (error) {

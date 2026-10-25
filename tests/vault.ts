@@ -144,7 +144,20 @@ export function createTestVault(): TestVault {
         fn(record);
         entry.text = withFrontmatter(entry.text, record);
       },
-      renameFile: async (): Promise<void> => undefined,
+      renameFile: async (file: TFile, next: string): Promise<void> => {
+        const entry = files.get(file.path);
+        if (!entry) throw new Error("file is missing");
+        files.delete(file.path);
+        const parent = folder(folderOf(next));
+        const previous = file.parent;
+        if (previous) previous.children = previous.children.filter((child) => child !== file);
+        file.path = next;
+        file.name = next.split("/").pop() ?? next;
+        file.basename = file.name.replace(/\.md$/, "");
+        file.parent = parent;
+        parent.children.push(file);
+        files.set(next, entry);
+      },
       trashFile: async (file: TFile): Promise<void> => {
         const entry = files.get(file.path);
         if (!entry) throw new Error("file is missing");
