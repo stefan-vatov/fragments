@@ -1,4 +1,4 @@
-import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile } from "obsidian";
+import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile, TFolder } from "obsidian";
 import { FragmentLibrary } from "./library";
 import { DEFAULT_SETTINGS, FragmentsSettingTab, type FragmentsSettings } from "./settings";
 import { FRAGMENTS_VIEW, FragmentsView } from "./view";
@@ -71,8 +71,11 @@ export default class FragmentsPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.library.remove(file.path)));
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
+        // A folder rename arrives as one event with no per-descendant events,
+        // so evict the whole old subtree and rebuild under the new path.
         this.library.remove(oldPath);
         if (file instanceof TFile) void this.library.refresh(file);
+        else if (file instanceof TFolder) void this.library.load();
       }),
     );
     this.registerEvent(

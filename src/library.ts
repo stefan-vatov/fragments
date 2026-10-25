@@ -137,9 +137,16 @@ export class FragmentLibrary {
   }
 
   remove(path: string): void {
-    this.bodyIndex.delete(path);
-    this.written.delete(path);
-    if (this.fragments.delete(path)) this.emit();
+    // Obsidian emits one event for a renamed or deleted folder, not one per
+    // descendant file, so evict every indexed path at or below it.
+    let changed = false;
+    for (const key of this.fragments.keys()) {
+      if (key !== path && !key.startsWith(`${path}/`)) continue;
+      this.bodyIndex.delete(key);
+      this.written.delete(key);
+      changed = this.fragments.delete(key) || changed;
+    }
+    if (changed) this.emit();
   }
 
   async read(path: string): Promise<string> {
