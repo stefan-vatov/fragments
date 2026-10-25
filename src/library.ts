@@ -319,9 +319,15 @@ export class FragmentLibrary {
   }
 
   async createCollection(name: string): Promise<void> {
-    const safe = name.trim().replace(/[\\/:*?"<>|]/g, "-");
-    if (!safe) throw new Error("Enter a collection name.");
-    await this.ensureFolder(`${this.folder()}/${safe}`);
+    // create() and move() treat a collection as a real nested path, so the
+    // dialog must too: sanitise each segment instead of flattening "/" to "-".
+    const path = name
+      .split("/")
+      .map((segment) => segment.trim().replace(/[\\:*?"<>|]/g, "-"))
+      .filter(Boolean)
+      .join("/");
+    if (!path) throw new Error("Enter a collection name.");
+    await this.ensureFolder(`${this.folder()}/${path}`);
     this.emit();
   }
 
