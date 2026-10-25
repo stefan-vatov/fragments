@@ -78,6 +78,7 @@ export class FragmentLibrary {
   private revision = 0;
   private generation = 0;
   private readonly pending = new Map<string, Promise<void>>();
+  private readonly written = new Map<string, string>();
 
   constructor(
     private readonly app: App,
@@ -106,6 +107,7 @@ export class FragmentLibrary {
     const generation = ++this.generation;
     this.fragments.clear();
     this.bodyIndex.clear();
+    this.written.clear();
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.contains(file.path));
     for (const file of files) this.updateMetadata(file);
     this.emit();
@@ -136,6 +138,7 @@ export class FragmentLibrary {
 
   remove(path: string): void {
     this.bodyIndex.delete(path);
+    this.written.delete(path);
     if (this.fragments.delete(path)) this.emit();
   }
 
@@ -195,7 +198,16 @@ export class FragmentLibrary {
       const file = this.file(path);
       await run(() =>
         this.app.vault.process(file, (source) => {
-          if (expectedBody !== undefined && bodyOf(source) !== expectedBody) {
+          // The caller's snapshot may predate a write this library already
+          // queued for the same path. Treat the body we last persisted
+          // ourselves as current, so our own write is not reported as an
+          // external edit.
+          const current = bodyOf(source);
+          if (
+            expectedBody !== undefined &&
+            current !== expectedBody &&
+            current !== this.written.get(path)
+          ) {
             throw new Error(
               "This note changed outside Fragments. Copy your draft, then reopen the note before saving.",
             );
@@ -205,6 +217,7 @@ export class FragmentLibrary {
           return `${header}${header ? "\n" : ""}${body}`;
         }),
       );
+      this.written.set(path, body);
       await this.refresh(file);
     });
   }
