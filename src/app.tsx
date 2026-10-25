@@ -88,6 +88,9 @@ function useKeyboard(
   useEffect(() => {
     const doc = view.containerEl.ownerDocument;
     const onKey = (event: KeyboardEvent): void => {
+      // The listener sits on the window document so it survives focus moves,
+      // but only keys aimed at the Fragments view belong to Fragments.
+      if (event.target instanceof Node && !view.containerEl.contains(event.target)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setDialog("palette");

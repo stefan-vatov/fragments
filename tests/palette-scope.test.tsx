@@ -78,9 +78,7 @@ describe("command palette and the active collection scope", () => {
     );
 
     await act(async () => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
-      );
+      host.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
     });
     const input = element();
     expect(input).not.toBeNull();
