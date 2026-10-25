@@ -130,14 +130,18 @@ function useDraft(library: FragmentLibrary, selected: string | null, modified: n
     void library
       .read(selected)
       .then((text) => {
-        if (active && (!dirty || loadedPath.current !== selected)) {
-          loadedPath.current = selected;
-          savedBody.current = text;
-          setBody(text);
-          setDraft(text);
-          setDirty(false);
-          pendingDraft.current = null;
-        }
+        if (!active) return;
+        // `pendingDraft` is live state, unlike a `dirty` value captured when
+        // this effect started. A draft for this path means the buffer already
+        // holds newer text than this read, so never overwrite it: a read that
+        // resolves after the user typed must not discard the edit.
+        if (pendingDraft.current?.path === selected) return;
+        loadedPath.current = selected;
+        savedBody.current = text;
+        setBody(text);
+        setDraft(text);
+        setDirty(false);
+        pendingDraft.current = null;
       })
       .catch(errorNotice);
     return () => {
