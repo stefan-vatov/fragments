@@ -83,6 +83,7 @@ export class FragmentLibrary {
   private generation = 0;
   private readonly pending = new Map<string, Promise<void>>();
   private readonly written = new Map<string, string>();
+  private readonly reads = new Map<string, number>();
 
   constructor(
     private readonly app: App,
@@ -152,6 +153,7 @@ export class FragmentLibrary {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.bodyIndex.delete(key);
       this.written.delete(key);
+      this.reads.delete(key);
       changed = this.fragments.delete(key) || changed;
     }
     if (changed) this.emit();
@@ -390,9 +392,15 @@ export class FragmentLibrary {
   }
 
   private async indexBody(file: TFile): Promise<void> {
+    const path = file.path;
+    const sequence = (this.reads.get(path) ?? 0) + 1;
+    this.reads.set(path, sequence);
     try {
       const body = bodyOf(await this.app.vault.cachedRead(file));
-      const item = this.fragments.get(file.path);
+      // Reads for one path can finish out of order. Only the newest read may
+      // replace the preview and the body search index.
+      if (this.reads.get(path) !== sequence) return;
+      const item = this.fragments.get(path);
       if (!item) return;
       this.bodyIndex.set(file.path, body);
       item.preview = plainPreview(body);
