@@ -448,8 +448,8 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
       errorNotice(error as Error);
     }
   };
-  const rename = async (value: string): Promise<void> => {
-    if (!selectedItem || value.trim() === selectedItem.title) return;
+  const rename = async (value: string): Promise<boolean> => {
+    if (!selectedItem || value.trim() === selectedItem.title) return false;
     const source = selectedItem.path;
     try {
       await enqueue(async () => {
@@ -458,8 +458,10 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
         relocated.current.set(source, next);
         setSelected((current) => (current === source ? next : current));
       });
+      return true;
     } catch (error) {
       errorNotice(error as Error);
+      return false;
     }
   };
   const move = async (value: string): Promise<void> => {
@@ -1247,7 +1249,14 @@ function EditorToolbar({
               key={`${selectedItem.path}:${selectedItem.title}`}
               aria-label="Fragment title"
               defaultValue={selectedItem.title}
-              onBlur={(event) => void rename(event.target.value)}
+              onBlur={(event) => {
+                const input = event.currentTarget;
+                void rename(input.value).then((renamed) => {
+                  // The field is uncontrolled, so a rejected rename would keep
+                  // showing text the fragment never received.
+                  if (!renamed && input.isConnected) input.value = selectedItem.title;
+                });
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") event.currentTarget.blur();
               }}
