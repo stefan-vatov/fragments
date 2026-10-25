@@ -40,8 +40,12 @@ export const getFrontMatterInfo = (source: string): FrontMatterInfo => {
   return { exists: true, frontmatter: match[1], contentStart: match[0].length };
 };
 
+export const notices: string[] = [];
+
 export class Notice {
-  constructor(readonly message: string) {}
+  constructor(readonly message: string) {
+    notices.push(message);
+  }
 }
 
 export const Platform = { isMacOS: false };

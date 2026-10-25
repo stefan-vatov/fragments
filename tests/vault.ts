@@ -5,6 +5,7 @@ export interface TestVault {
   app: App;
   vault: TestVaultApi;
   files: Map<string, { file: TFile; text: string }>;
+  trashed: Map<string, { file: TFile; text: string }>;
   addFile: (path: string, text: string, mtime?: number) => TFile;
 }
 
@@ -74,6 +75,7 @@ const withFrontmatter = (text: string, record: FrontmatterRecord): string => {
 
 export function createTestVault(): TestVault {
   const files = new Map<string, { file: TFile; text: string }>();
+  const trashed = new Map<string, { file: TFile; text: string }>();
   const folders = new Map<string, TFolder>();
   const root = new Folder();
   root.path = "/";
@@ -139,9 +141,16 @@ export function createTestVault(): TestVault {
         entry.text = withFrontmatter(entry.text, record);
       },
       renameFile: async (): Promise<void> => undefined,
-      trashFile: async (): Promise<void> => undefined,
+      trashFile: async (file: TFile): Promise<void> => {
+        const entry = files.get(file.path);
+        if (!entry) throw new Error("file is missing");
+        files.delete(file.path);
+        trashed.set(file.path, entry);
+        const parent = file.parent;
+        if (parent) parent.children = parent.children.filter((child) => child !== file);
+      },
     },
   } as unknown as App;
 
-  return { app, vault, files, addFile };
+  return { app, vault, files, trashed, addFile };
 }

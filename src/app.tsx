@@ -469,6 +469,9 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
     const source = selectedItem.path;
     try {
       await enqueue(async () => {
+        // Persist the open draft before the file goes away; a failed save
+        // aborts the trash rather than silently dropping the edits.
+        await save(false);
         const target = resolvePath(source);
         await library.trash(target);
         setSelected((current) => (current === source || current === target ? null : current));
