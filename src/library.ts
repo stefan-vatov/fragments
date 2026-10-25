@@ -105,6 +105,10 @@ export class FragmentLibrary {
 
   async load(): Promise<void> {
     const generation = ++this.generation;
+    // A saved setting may predate this canonicalisation (or the folder may
+    // have been renamed with different case). Adopt the vault's casing when an
+    // existing folder matches, so the library never silently empties.
+    this.settings.folder = this.existingFolder(this.folder()) ?? this.folder();
     this.fragments.clear();
     this.bodyIndex.clear();
     this.written.clear();
@@ -313,8 +317,19 @@ export class FragmentLibrary {
   }
 
   async changeFolder(folder: string): Promise<void> {
-    this.settings.folder = cleanFolder(folder) || "Fragments";
+    const requested = cleanFolder(folder) || "Fragments";
+    const existing = this.existingFolder(requested);
+    if (!existing) throw new Error(`The folder “${requested}” does not exist in this vault.`);
+    this.settings.folder = existing;
     await this.load();
+  }
+
+  private existingFolder(folder: string): string | undefined {
+    const folders = this.app.vault.getAllFolders(true);
+    const exact = folders.find((entry) => entry.path === folder);
+    if (exact) return exact.path;
+    const lower = folder.toLowerCase();
+    return folders.find((entry) => entry.path.toLowerCase() === lower)?.path;
   }
 
   private updateMetadata(file: TFile): void {

@@ -108,9 +108,7 @@ export class FragmentsSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Library").setHeading();
     new Setting(containerEl)
       .setName("Fragments folder")
-      .setDesc(
-        "Choose an existing vault folder or enter a new path. Subfolders become collections.",
-      )
+      .setDesc("Choose an existing vault folder. Subfolders become collections.")
       .addText((text) => {
         text.setPlaceholder(DEFAULT_SETTINGS.folder).setValue(this.plugin.settings.folder);
         this.folderSuggest = new FolderSuggest(this.app, text.inputEl, () => {
