@@ -1462,6 +1462,15 @@ function Dialogs() {
     setNewCollection,
     library,
   } = useAppContext();
+  const submitCollection = (): void => {
+    void library
+      .createCollection(newCollection)
+      .then(() => {
+        setNewCollection("");
+        setDialog(null);
+      })
+      .catch(errorNotice);
+  };
   return (
     <>
       {dialog && (
@@ -1532,21 +1541,13 @@ function Dialogs() {
                 onChange={(event) => setNewCollection(event.target.value)}
                 placeholder="Collection name"
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.form?.requestSubmit();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitCollection();
+                  }
                 }}
               />
-              <button
-                className="fragments-primary"
-                onClick={() => {
-                  void library
-                    .createCollection(newCollection)
-                    .then(() => {
-                      setNewCollection("");
-                      setDialog(null);
-                    })
-                    .catch(errorNotice);
-                }}
-              >
+              <button className="fragments-primary" onClick={submitCollection}>
                 Create collection
               </button>
             </div>
