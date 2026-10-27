@@ -314,6 +314,60 @@ try {
   await until(async () => (await title()) === "Filtered renamed", "moved fragment stays selected");
   assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
 
+  for (const counter of [1, 2]) {
+    await click(`document.querySelector('.fragments-new')`);
+    await until(async () => (await title()) === "Untitled fragment", "new fragment selected");
+    await type('[aria-label="Fragment title"]', "Existing");
+    await press("Enter", "Enter", 13);
+    const expected = `Existing (${counter})`;
+    await until(async () => (await title()) === expected, "duplicate title gets a counter");
+    const created = await readFile(file(expected), "utf8");
+    assert(created.includes(`title: ${expected}`));
+    assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
+  }
+
+  const destinationContent = originalContent.replace(
+    "Original fragment body.",
+    "Destination body.",
+  );
+  await host.evaluate(`(async () => {
+    const path = ${JSON.stringify(`${folderPath}/Destination/Existing.md`)};
+    const note = await app.vault.create(path, ${JSON.stringify(destinationContent)});
+    await app.plugins.plugins.fragments.library.refresh(note);
+  })()`);
+  await until(
+    () =>
+      page.evaluate(`!![...document.querySelectorAll('.fragments-result')].find(row =>
+        row.innerText.includes('Original fragment body.'))`),
+    "original fragment remains available",
+  );
+  await click(`[...document.querySelectorAll('.fragments-result')].find(row =>
+    row.innerText.includes('Original fragment body.'))`);
+  await until(
+    () =>
+      page.evaluate(
+        `document.querySelector('[aria-label="Fragment text"]')?.value.includes('Original fragment body.')`,
+      ),
+    "original fragment selected for moving",
+  );
+  await click(`document.querySelector(${JSON.stringify(select)})`);
+  await press("ArrowDown", "ArrowDown", 40);
+  await press("Enter", "Enter", 13);
+  const duplicateMove = join(expectedVault, folderPath, "Destination", "Existing (3).md");
+  await until(async () => {
+    try {
+      const content = await readFile(duplicateMove, "utf8");
+      return content.includes("Original fragment body.") && content.includes("title: Existing (3)");
+    } catch {
+      return false;
+    }
+  }, "duplicate move receives an available suffix");
+  await until(async () => (await title()) === "Existing (3)", "moved duplicate title appears");
+  assert.equal(
+    await readFile(join(expectedVault, folderPath, "Destination", "Existing.md"), "utf8"),
+    destinationContent,
+  );
+
   await click(`document.querySelector('[title="New collection"]')`);
   const input = '[aria-label="Collection name"]';
   await until(
@@ -342,7 +396,7 @@ try {
   }, "Enter creates the collection on disk");
   await until(() => page.evaluate(`!document.querySelector('dialog')`), "collection dialog closes");
   console.log(
-    "Passed: rename, selection, filtered edits and move preserved the intended Markdown files; collection dialog focus and Enter worked.",
+    "Passed: rename, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; collection dialog focus and Enter worked.",
   );
 } finally {
   if (delayedTitleWrite) {

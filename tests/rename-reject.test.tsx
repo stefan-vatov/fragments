@@ -66,10 +66,10 @@ describe("rejected rename", () => {
     const input = titleInput(host);
     expect(input?.value).toBe("Alpha");
 
-    await setTitle(input!, "Beta");
+    await setTitle(input!, "_fragments-scratchpad");
 
     expect(titleInput(host)?.value).toBe("Alpha");
-    expect(notices).toContain("A fragment with that title already exists.");
+    expect(notices).toContain("That title is reserved for the scratchpad.");
     expect(files.get("Fragments/Alpha.md")?.text).toContain('title: "Alpha"');
     expect(files.get("Fragments/Beta.md")?.text).toContain('title: "Beta"');
   });
