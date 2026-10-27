@@ -1,3 +1,9 @@
+## [1.5.3](https://github.com/stefan-vatov/fragments/compare/1.5.2...1.5.3) (2026-10-27)
+
+### Bug Fixes
+
+- preserve fragment selection and dialog focus ([24209b1](https://github.com/stefan-vatov/fragments/commit/24209b11265a88c46761596682d3ee15667ae63c))
+
 ## [1.5.2](https://github.com/stefan-vatov/fragments/compare/1.5.1...1.5.2) (2026-10-25)
 
 ### Bug Fixes
