@@ -1482,26 +1482,33 @@ function Dialogs() {
     setNewCollection,
     library,
   } = useAppContext();
-  const submitCollection = (): void => {
-    void library
-      .createCollection(newCollection)
-      .then(() => {
-        setNewCollection("");
-        setDialog(null);
-      })
-      .catch(errorNotice);
-  };
+  const overlay = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const element = overlay.current;
+    if (!dialog || !element) return undefined;
+    element.showModal();
+    element.querySelector<HTMLInputElement>("input")?.focus();
+    return () => element.close();
+  }, [dialog]);
+
   return (
     <>
       {dialog && (
-        <div
+        <dialog
+          ref={overlay}
           className="fragments-overlay"
+          aria-label={dialog === "collection" ? "New collection" : "Command palette"}
+          onCancel={(event) => {
+            event.preventDefault();
+            setDialog(null);
+          }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setDialog(null);
           }}
         >
           {dialog === "palette" && (
-            <div className="fragments-palette" role="dialog" aria-label="Command palette">
+            <div className="fragments-palette">
               <div className="fragments-palette-search">
                 <Search size={19} />
                 <input
@@ -1548,31 +1555,48 @@ function Dialogs() {
             </div>
           )}
           {dialog === "collection" && (
-            <div className="fragments-small-dialog" role="dialog" aria-label="New collection">
+            <form
+              className="fragments-small-dialog"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void library
+                  .createCollection(newCollection)
+                  .then(() => {
+                    setNewCollection("");
+                    setDialog(null);
+                  })
+                  .catch(errorNotice);
+              }}
+            >
               <header>
                 <h2>New collection</h2>
-                <button onClick={() => setDialog(null)}>
+                <button
+                  type="button"
+                  aria-label="Close new collection"
+                  onClick={() => setDialog(null)}
+                >
                   <X size={17} />
                 </button>
               </header>
               <input
                 autoFocus
+                aria-label="Collection name"
                 value={newCollection}
                 onChange={(event) => setNewCollection(event.target.value)}
                 placeholder="Collection name"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    submitCollection();
+                    event.currentTarget.form?.requestSubmit();
                   }
                 }}
               />
-              <button className="fragments-primary" onClick={submitCollection}>
+              <button className="fragments-primary" type="submit">
                 Create collection
               </button>
-            </div>
+            </form>
           )}
-        </div>
+        </dialog>
       )}
     </>
   );

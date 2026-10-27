@@ -296,10 +296,22 @@ Inspect the screenshot. Run interactions relevant to the change:
 8. Inspect desktop-sized and narrow rendered layouts, focus visibility, empty
    states, and console errors. Close Fragments and reopen it: one replacement
    app window should open.
+9. Open New collection repeatedly, including after switching between the host
+   window and the Fragments popout. Confirm the name field receives focus, can
+   be clicked and typed into, and Tab stays within the popup. Background inputs
+   must not take focus while it is open. Create collections with Enter and with
+   the button, verify the folders on disk, and confirm Escape and the close
+   button cancel without creating a folder. Check command-palette typing and
+   cancellation too, since it shares the modal overlay.
 
 Wait for expected DOM or file state with a bounded timeout. API setup does not
 replace pointer/keyboard coverage. Record the flows actually exercised; the
 checklist alone is not evidence of coverage.
+
+For the rename and dialog regressions, with the isolated fixture and Fragments popout open,
+run `node scripts/test-rename-headless.mjs` with `FRAGMENTS_TEST_ROOT` and
+`FRAGMENTS_CDP_PORT` set for that session. It creates and removes a synthetic
+collection, drives the real interface, and checks the resulting Markdown files.
 
 ## 5. Verify app-window reuse through replacement and reload
 

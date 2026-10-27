@@ -70,6 +70,7 @@ describe("new collection dialog", () => {
 
     const input = host.querySelector<HTMLInputElement>('input[placeholder="Collection name"]');
     expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
     await setInput(input!, "reading");
     await pressEnter(input!);
 

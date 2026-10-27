@@ -907,15 +907,25 @@
   padding: 0 14px;
 }
 .fragments-overlay {
-  position: absolute;
+  position: fixed;
   z-index: 100;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
   padding: 20px;
+  border: 0;
   background: #000b;
+  color: inherit;
   backdrop-filter: blur(3px);
+}
+.fragments-overlay::backdrop {
+  background: transparent;
 }
 .fragments-palette {
   width: min(600px, 100%);
