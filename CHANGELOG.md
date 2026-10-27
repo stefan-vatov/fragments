@@ -1,3 +1,9 @@
+## [1.5.5](https://github.com/stefan-vatov/fragments/compare/1.5.4...1.5.5) (2026-10-27)
+
+### Bug Fixes
+
+- add suffixes for duplicate fragment names ([eeccb73](https://github.com/stefan-vatov/fragments/commit/eeccb7329d8aed8a6be587451f3c2eac3db79ec3))
+
 ## [1.5.4](https://github.com/stefan-vatov/fragments/compare/1.5.3...1.5.4) (2026-10-27)
 
 ### Bug Fixes
