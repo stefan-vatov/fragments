@@ -1,3 +1,9 @@
+## [1.5.4](https://github.com/stefan-vatov/fragments/compare/1.5.3...1.5.4) (2026-10-27)
+
+### Bug Fixes
+
+- keep fragment renames on the intended note ([c4da61d](https://github.com/stefan-vatov/fragments/commit/c4da61d5d41332c4e4d0e41e9e8541d0880f2a36))
+
 ## [1.5.3](https://github.com/stefan-vatov/fragments/compare/1.5.2...1.5.3) (2026-10-27)
 
 ### Bug Fixes
