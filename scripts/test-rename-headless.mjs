@@ -63,6 +63,7 @@ const folder = `Rename regression ${randomUUID()}`;
 const folderPath = `Fragments/${folder}`;
 const expectedVault = join(root, "Fragments Test");
 let created = false;
+let delayedTitleWrite = false;
 
 async function until(check, message) {
   for (let attempts = 0; attempts < 100; attempts++) {
@@ -129,6 +130,9 @@ try {
     await app.vault.createFolder(path + '/Destination');
     const note = await app.vault.create(path + '/Existing.md', ${JSON.stringify(originalContent)});
     await app.plugins.plugins.fragments.library.refresh(note);
+    const untitled = await app.vault.create(path + '/Untitled fragment.md',
+      '---\\ntitle: Untitled fragment\\ntags: []\\n---\\n\\nSecond fragment body.\\n');
+    await app.plugins.plugins.fragments.library.refresh(untitled);
   })()`);
   created = true;
   await page.send("Emulation.setDeviceMetricsOverride", {
@@ -141,6 +145,76 @@ try {
     [...button.querySelectorAll('span')].some(span => span.innerText === ${JSON.stringify(folder)}))`;
   await until(() => page.evaluate(`!!(${collection})`), "fixture collection appears");
   await click(collection);
+  await until(
+    () => page.evaluate(`document.querySelectorAll('.fragments-result').length === 2`),
+    "both fixture fragments appear",
+  );
+  if (
+    await page.evaluate(
+      `document.querySelector('.fragments-list-summary button').innerText.includes('Recent')`,
+    )
+  ) {
+    await click(`document.querySelector('.fragments-list-summary button')`);
+  }
+  await until(
+    () =>
+      page.evaluate(
+        `document.querySelector('.fragments-list-summary button').innerText.includes('Name')`,
+      ),
+    "named fragment appears first",
+  );
+  await clickRow("Untitled fragment");
+  await until(async () => (await title()) === "Untitled fragment", "second fragment selected");
+  await type('[aria-label="Fragment title"]', "Second note renamed");
+  await host.evaluate(`(() => {
+    const manager = app.fileManager;
+    if (window.__fragmentsOriginalTitleWrite) throw Error('Unexpected existing instrumentation');
+    const original = manager.processFrontMatter;
+    window.__fragmentsOriginalTitleWrite = original;
+    manager.processFrontMatter = async function (...args) {
+      await new Promise(resolve => { window.__fragmentsReleaseTitleWrite = resolve; });
+      return original.apply(this, args);
+    };
+  })()`);
+  delayedTitleWrite = true;
+  await press("Enter", "Enter", 13);
+  await until(async () => {
+    try {
+      await stat(file("Second note renamed"));
+      return true;
+    } catch {
+      return false;
+    }
+  }, "second fragment path is renamed");
+  await until(
+    () => host.evaluate(`typeof window.__fragmentsReleaseTitleWrite === 'function'`),
+    "title write is waiting",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(
+    await title(),
+    "Second note renamed",
+    "renaming the second note must not switch to the first",
+  );
+  await host.evaluate(`window.__fragmentsReleaseTitleWrite()`);
+  await until(async () => {
+    try {
+      return (await readFile(file("Second note renamed"), "utf8")).includes(
+        "title: Second note renamed",
+      );
+    } catch {
+      return false;
+    }
+  }, "second fragment title is saved");
+  await host.evaluate(`(() => {
+    app.fileManager.processFrontMatter = window.__fragmentsOriginalTitleWrite;
+    delete window.__fragmentsOriginalTitleWrite;
+    delete window.__fragmentsReleaseTitleWrite;
+  })()`);
+  delayedTitleWrite = false;
+  assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
+  const namedSecond = await readFile(file("Second note renamed"), "utf8");
+  await clickRow("Existing");
   await until(async () => (await title()) === "Existing", "existing fragment selected");
 
   await click(`document.querySelector('.fragments-new')`);
@@ -157,6 +231,12 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.equal(await title(), "Existing", "the later row selection must survive the rename");
   assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
+  assert.equal(
+    await readFile(file("Second note renamed"), "utf8"),
+    namedSecond,
+    "reusing the untitled filename must not rename the previously named fragment",
+  );
+  assert(!(await readFile(file("Renamed new"), "utf8")).includes("Second fragment body."));
 
   await click(`document.querySelector('.fragments-new')`);
   await until(async () => (await title()) === "Untitled fragment", "first untitled selected");
@@ -265,6 +345,14 @@ try {
     "Passed: rename, selection, filtered edits and move preserved the intended Markdown files; collection dialog focus and Enter worked.",
   );
 } finally {
+  if (delayedTitleWrite) {
+    await host.evaluate(`(() => {
+      window.__fragmentsReleaseTitleWrite?.();
+      app.fileManager.processFrontMatter = window.__fragmentsOriginalTitleWrite;
+      delete window.__fragmentsOriginalTitleWrite;
+      delete window.__fragmentsReleaseTitleWrite;
+    })()`);
+  }
   if (created) {
     await host.evaluate(`(async () => {
       const folder = app.vault.getAbstractFileByPath(${JSON.stringify(folderPath)});

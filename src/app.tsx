@@ -11,7 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { MarkdownRenderer, Notice, Platform } from "obsidian";
+import { MarkdownRenderer, Notice, Platform, TFile, type App } from "obsidian";
 import {
   Blocks,
   ChevronDown,
@@ -107,7 +107,12 @@ function useKeyboard(
   }, [save, setDialog, view]);
 }
 
-function useDraft(library: FragmentLibrary, selected: string | null, modified: number | undefined) {
+function useDraft(
+  library: FragmentLibrary,
+  selected: string | null,
+  modified: number | undefined,
+  creationRevision: number,
+) {
   const [body, setBody] = useState("");
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -150,7 +155,7 @@ function useDraft(library: FragmentLibrary, selected: string | null, modified: n
     return () => {
       active = false;
     };
-  }, [selected, modified, library]);
+  }, [selected, modified, library, creationRevision]);
 
   useEffect(() => {
     if (!selected || !dirty) return undefined;
@@ -178,7 +183,7 @@ function useDraft(library: FragmentLibrary, selected: string | null, modified: n
       if (writing?.path === selected)
         void library.saveBody(writing.path, writing.text, savedBody.current).catch(errorNotice);
     },
-    [selected, library],
+    [selected, library, creationRevision],
   );
 
   const save = useCallback(
@@ -408,40 +413,78 @@ function VirtualList({
   );
 }
 
+type FragmentTransitions = Map<string, Map<TFile, { item: Fragment; count: number }>>;
+
 interface FragmentMutations {
+  app: App;
   library: FragmentLibrary;
   selectedItem: Fragment | undefined;
   save: (notify?: boolean) => Promise<void>;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  transitioning: FragmentTransitions;
 }
 
-function useFragmentMutations({ library, selectedItem, save, setSelected }: FragmentMutations) {
-  // Rename/move/trash run asynchronously, and a blur on the title input can
-  // start one while the user is already clicking something else. Serialise
-  // path mutations and remember how each rename relocated a fragment, so a
-  // trailing mutation targets the fragment it was issued for instead of a
-  // stale path.
+function useFragmentMutations({
+  app,
+  library,
+  selectedItem,
+  save,
+  setSelected,
+  transitioning,
+}: FragmentMutations) {
   const mutations = useRef<Promise<void>>(Promise.resolve());
-  const relocated = useRef(new Map<string, string>());
-  const resolvePath = (path: string): string => {
-    let current = path;
-    for (;;) {
-      const next = relocated.current.get(current);
-      if (!next || next === current) return current;
-      current = next;
-    }
+  const captureFile = (path: string): TFile => {
+    const current = app.vault.getAbstractFileByPath(path);
+    if (current instanceof TFile) return current;
+    const pending = [...(transitioning.get(path)?.keys() ?? [])].at(-1);
+    if (pending) return pending;
+    throw new Error("Fragment is no longer available.");
   };
   const enqueue = (task: () => Promise<void>): Promise<void> => {
     const run = mutations.current.then(task, task);
     mutations.current = run.catch(() => undefined);
     return run;
   };
+  const transition = async (
+    item: Fragment,
+    file: TFile,
+    task: () => Promise<void>,
+  ): Promise<void> => {
+    let files = transitioning.get(item.path);
+    if (!files) {
+      files = new Map();
+      transitioning.set(item.path, files);
+    }
+    const pending = files.get(file);
+    if (pending) pending.count++;
+    else files.set(file, { item, count: 1 });
+    try {
+      await enqueue(task);
+    } finally {
+      const active = files.get(file);
+      if (active && --active.count === 0) files.delete(file);
+      if (!files.size) transitioning.delete(item.path);
+    }
+  };
+  const selectRelocated = (
+    source: string,
+    previous: string,
+    file: TFile,
+    next: string | null,
+  ): void => {
+    setSelected((current) => {
+      if (current !== source && current !== previous) return current;
+      const occupant = app.vault.getAbstractFileByPath(current);
+      return occupant && occupant !== file ? current : next;
+    });
+  };
   const toggleStar = async (): Promise<void> => {
     if (!selectedItem) return;
     const source = selectedItem.path;
     const starred = !selectedItem.starred;
     try {
-      await enqueue(() => library.updateProperties(resolvePath(source), { starred }));
+      const file = captureFile(source);
+      await enqueue(() => library.updateProperties(file.path, { starred }));
     } catch (error) {
       errorNotice(error as Error);
     }
@@ -454,7 +497,8 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
       .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
       .filter(Boolean);
     try {
-      await enqueue(() => library.updateProperties(resolvePath(source), { tags }));
+      const file = captureFile(source);
+      await enqueue(() => library.updateProperties(file.path, { tags }));
     } catch (error) {
       errorNotice(error as Error);
     }
@@ -463,15 +507,21 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
     if (!selectedItem || value.trim() === selectedItem.title) return false;
     const source = selectedItem.path;
     try {
-      await enqueue(async () => {
+      const file = captureFile(source);
+      await transition(selectedItem, file, async () => {
         await save(false);
-        const next = await library.rename(resolvePath(source), value);
-        relocated.current.set(source, next);
-        setSelected((current) => (current === source ? next : current));
+        const previous = file.path;
+        const next = await library.rename(previous, value);
+        selectRelocated(source, previous, file, next);
       });
       return true;
     } catch (error) {
       errorNotice(error as Error);
+      setSelected((current) =>
+        current === source && !library.entries().some((item) => item.path === source)
+          ? null
+          : current,
+      );
       return false;
     }
   };
@@ -479,33 +529,41 @@ function useFragmentMutations({ library, selectedItem, save, setSelected }: Frag
     if (!selectedItem || value === selectedItem.collection) return;
     const source = selectedItem.path;
     try {
-      await enqueue(async () => {
+      const file = captureFile(source);
+      await transition(selectedItem, file, async () => {
         await save(false);
-        const next = await library.move(resolvePath(source), value);
-        relocated.current.set(source, next);
-        setSelected((current) => (current === source ? next : current));
+        const previous = file.path;
+        const next = await library.move(previous, value);
+        selectRelocated(source, previous, file, next);
       });
     } catch (error) {
       errorNotice(error as Error);
+      setSelected((current) =>
+        current === source && !library.entries().some((item) => item.path === source)
+          ? null
+          : current,
+      );
     }
   };
   const trash = async (): Promise<void> => {
     if (!selectedItem || !window.confirm(`Move “${selectedItem.title}” to trash?`)) return;
     const source = selectedItem.path;
     try {
+      const file = captureFile(source);
       await enqueue(async () => {
         // Persist the open draft before the file goes away; a failed save
         // aborts the trash rather than silently dropping the edits.
         await save(false);
-        const target = resolvePath(source);
+        const target = file.path;
         await library.trash(target);
-        setSelected((current) => (current === source || current === target ? null : current));
+        selectRelocated(source, target, file, null);
       });
     } catch (error) {
       errorNotice(error as Error);
     }
   };
-  return { toggleStar, updateTags, rename, move, trash };
+  const waitForMutations = useCallback((): Promise<void> => mutations.current, []);
+  return { toggleStar, updateTags, rename, move, trash, waitForMutations };
 }
 
 function useController({ plugin, view, handle }: Props) {
@@ -514,6 +572,8 @@ function useController({ plugin, view, handle }: Props) {
   const entries = useMemo(() => library.entries(), [library, revision]);
   const [scope, setScope] = useState<SearchScope>({ kind: "all" });
   const [selected, setSelected] = useState<string | null>(null);
+  const [creationRevision, setCreationRevision] = useState(0);
+  const transitioning = useRef<FragmentTransitions>(new Map());
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [sort, setSort] = useState<"recent" | "name">("recent");
@@ -524,17 +584,24 @@ function useController({ plugin, view, handle }: Props) {
   const [newCollection, setNewCollection] = useState("");
   const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">("list");
   const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
-  const selectedItem = entries.find((item) => item.path === selected);
+  const selectedItem =
+    entries.find((item) => item.path === selected) ??
+    (selected
+      ? [...(transitioning.current.get(selected)?.values() ?? [])].at(-1)?.item
+      : undefined);
   const { body, draft, dirty, save, edit } = useDraft(
     library,
     selectedItem?.path ?? null,
     selectedItem?.modified,
+    creationRevision,
   );
-  const { toggleStar, updateTags, rename, move, trash } = useFragmentMutations({
+  const { toggleStar, updateTags, rename, move, trash, waitForMutations } = useFragmentMutations({
+    app: plugin.app,
     library,
     selectedItem,
     save,
     setSelected,
+    transitioning: transitioning.current,
   });
   const tags = useMemo(() => countTags(entries), [entries]);
   const searchIndex = useMemo(() => indexFragments(entries), [entries]);
@@ -554,13 +621,20 @@ function useController({ plugin, view, handle }: Props) {
     // body edit). Keep the editor on a fragment that still exists instead of
     // diverting the next keystrokes into a different note; only a filter change
     // or a vanished fragment may move the selection.
-    if (!filterChanged && selected && entries.some((item) => item.path === selected)) return;
+    if (
+      !filterChanged &&
+      selected &&
+      (transitioning.current.has(selected) || entries.some((item) => item.path === selected))
+    )
+      return;
     setSelected(filtered[0]?.path ?? null);
   }, [selected, entries, filtered, filterKey]);
 
   const createFragment = useCallback(async () => {
     try {
+      await waitForMutations();
       const path = await library.create(scope.kind === "collection" ? scope.value : "");
+      setCreationRevision((current) => current + 1);
       setScope(scope.kind === "collection" ? scope : { kind: "all" });
       setQuery("");
       setTagFilter("");
@@ -576,7 +650,7 @@ function useController({ plugin, view, handle }: Props) {
     } catch (error) {
       errorNotice(error as Error);
     }
-  }, [library, scope, view]);
+  }, [library, scope, view, waitForMutations]);
 
   useEffect(() => {
     handle({
@@ -647,6 +721,7 @@ function useController({ plugin, view, handle }: Props) {
     entries,
     scope,
     selected,
+    creationRevision,
     query,
     tagFilter,
     sort,
@@ -1241,8 +1316,17 @@ function EditorToolbar({
   scratchOpen: boolean;
   toggleScratchpad: () => void;
 }) {
-  const { selectedItem, setMobilePane, rename, toggleStar, mode, setMode, copy, trash } =
-    useAppContext();
+  const {
+    selectedItem,
+    creationRevision,
+    setMobilePane,
+    rename,
+    toggleStar,
+    mode,
+    setMode,
+    copy,
+    trash,
+  } = useAppContext();
   return (
     <header className="fragments-editor-header">
       <button
@@ -1257,7 +1341,7 @@ function EditorToolbar({
         <>
           <div className="fragments-title-wrap">
             <input
-              key={`${selectedItem.path}:${selectedItem.title}`}
+              key={`${creationRevision}:${selectedItem.path}:${selectedItem.title}`}
               aria-label="Fragment title"
               defaultValue={selectedItem.title}
               onBlur={(event) => {
