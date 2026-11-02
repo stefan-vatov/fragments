@@ -312,6 +312,9 @@ For the rename and dialog regressions, with the isolated fixture and Fragments p
 run `node scripts/test-rename-headless.mjs` with `FRAGMENTS_TEST_ROOT` and
 `FRAGMENTS_CDP_PORT` set for that session. It creates and removes a synthetic
 collection, drives the real interface, and checks the resulting Markdown files.
+It also delays a real file creation to verify that immediate typing cannot rename
+the previous fragment, then checks that the new title receives focus and selects
+its text when creation finishes.
 
 ## 5. Verify app-window reuse through replacement and reload
 

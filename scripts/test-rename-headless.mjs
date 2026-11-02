@@ -64,6 +64,7 @@ const folderPath = `Fragments/${folder}`;
 const expectedVault = join(root, "Fragments Test");
 let created = false;
 let delayedTitleWrite = false;
+let delayedCreation = false;
 
 async function until(check, message) {
   for (let attempts = 0; attempts < 100; attempts++) {
@@ -216,6 +217,66 @@ try {
   const namedSecond = await readFile(file("Second note renamed"), "utf8");
   await clickRow("Existing");
   await until(async () => (await title()) === "Existing", "existing fragment selected");
+
+  const previousTitlePoint = await page.evaluate(`(() => {
+    const bounds = document.querySelector('[aria-label="Fragment title"]').getBoundingClientRect();
+    return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  })()`);
+  await host.evaluate(`(() => {
+    const vault = app.vault;
+    const original = vault.create;
+    window.__fragmentsOriginalCreate = original;
+    vault.create = async function (...args) {
+      const file = await original.apply(this, args);
+      await new Promise(resolve => { window.__fragmentsReleaseCreate = resolve; });
+      return file;
+    };
+  })()`);
+  delayedCreation = true;
+  await click(`document.querySelector('.fragments-new')`);
+  await until(
+    () => host.evaluate(`typeof window.__fragmentsReleaseCreate === 'function'`),
+    "new file exists while creation is still pending",
+  );
+  // Click and type exactly where the previous title was, before creation returns.
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await page.send("Input.dispatchMouseEvent", {
+      type,
+      ...previousTitlePoint,
+      button: "left",
+      clickCount: 1,
+    });
+  }
+  await page.send("Input.insertText", { text: "Must not rename the previous note" });
+  await press("Enter", "Enter", 13);
+  assert.equal(await title(), undefined, "the previous title must not remain editable during New");
+  assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
+  await host.evaluate(`(() => {
+    window.__fragmentsReleaseCreate();
+    app.vault.create = window.__fragmentsOriginalCreate;
+    delete window.__fragmentsOriginalCreate;
+    delete window.__fragmentsReleaseCreate;
+  })()`);
+  delayedCreation = false;
+  await until(
+    () =>
+      page.evaluate(`document.activeElement === document.querySelector('[aria-label="Fragment title"]') &&
+      document.activeElement?.value === 'Untitled fragment'`),
+    "new title is focused after its editor mounts",
+  );
+  // No click or Select All: New must select the new title for immediate typing.
+  await page.send("Input.insertText", { text: "Immediate new" });
+  await press("Enter", "Enter", 13);
+  await until(async () => {
+    try {
+      return (await readFile(file("Immediate new"), "utf8")).includes("title: Immediate new");
+    } catch {
+      return false;
+    }
+  }, "immediately typed title belongs to the newly created file");
+  assert.equal(await readFile(file("Existing"), "utf8"), originalContent);
+  assert.equal(await readFile(file("Second note renamed"), "utf8"), namedSecond);
+  await until(async () => (await title()) === "Immediate new", "new fragment stays selected");
 
   await click(`document.querySelector('.fragments-new')`);
   await until(async () => (await title()) === "Untitled fragment", "new fragment selected");
@@ -396,9 +457,17 @@ try {
   }, "Enter creates the collection on disk");
   await until(() => page.evaluate(`!document.querySelector('dialog')`), "collection dialog closes");
   console.log(
-    "Passed: rename, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; collection dialog focus and Enter worked.",
+    "Passed: immediate creation/rename, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; new-title focus and collection dialog Enter worked.",
   );
 } finally {
+  if (delayedCreation) {
+    await host.evaluate(`(() => {
+      window.__fragmentsReleaseCreate?.();
+      app.vault.create = window.__fragmentsOriginalCreate;
+      delete window.__fragmentsOriginalCreate;
+      delete window.__fragmentsReleaseCreate;
+    })()`);
+  }
   if (delayedTitleWrite) {
     await host.evaluate(`(() => {
       window.__fragmentsReleaseTitleWrite?.();

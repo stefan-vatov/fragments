@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -573,6 +574,8 @@ function useController({ plugin, view, handle }: Props) {
   const [scope, setScope] = useState<SearchScope>({ kind: "all" });
   const [selected, setSelected] = useState<string | null>(null);
   const [creationRevision, setCreationRevision] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const creationPending = useRef(false);
   const transitioning = useRef<FragmentTransitions>(new Map());
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -614,6 +617,7 @@ function useController({ plugin, view, handle }: Props) {
   const filterKey = JSON.stringify([scope, tagFilter, query, sort]);
   const previousFilter = useRef(filterKey);
   useEffect(() => {
+    if (creating) return;
     const filterChanged = previousFilter.current !== filterKey;
     previousFilter.current = filterKey;
     if (selected && filtered.some((item) => item.path === selected)) return;
@@ -628,9 +632,12 @@ function useController({ plugin, view, handle }: Props) {
     )
       return;
     setSelected(filtered[0]?.path ?? null);
-  }, [selected, entries, filtered, filterKey]);
+  }, [selected, entries, filtered, filterKey, creating]);
 
   const createFragment = useCallback(async () => {
+    if (creationPending.current) return;
+    creationPending.current = true;
+    setCreating(true);
     try {
       await waitForMutations();
       const path = await library.create(scope.kind === "collection" ? scope.value : "");
@@ -642,15 +649,13 @@ function useController({ plugin, view, handle }: Props) {
       setMode("edit");
       setMobilePane("editor");
       setDialog(null);
-      window.requestAnimationFrame(() => {
-        const title = view.contentEl.querySelector<HTMLInputElement>(".fragments-title-wrap input");
-        title?.focus();
-        title?.select();
-      });
     } catch (error) {
       errorNotice(error as Error);
+    } finally {
+      creationPending.current = false;
+      setCreating(false);
     }
-  }, [library, scope, view, waitForMutations]);
+  }, [library, scope, waitForMutations]);
 
   useEffect(() => {
     handle({
@@ -722,6 +727,7 @@ function useController({ plugin, view, handle }: Props) {
     scope,
     selected,
     creationRevision,
+    creating,
     query,
     tagFilter,
     sort,
@@ -732,7 +738,7 @@ function useController({ plugin, view, handle }: Props) {
     newCollection,
     mobilePane,
     shortcut,
-    selectedItem,
+    selectedItem: creating ? undefined : selectedItem,
     body,
     draft,
     dirty,
@@ -828,6 +834,7 @@ function SidebarPane() {
     shortcut,
     setDialog,
     createFragment,
+    creating,
     scope,
     selectScope,
     entries,
@@ -847,7 +854,11 @@ function SidebarPane() {
             <kbd>{shortcut}</kbd>
           </button>
         </header>
-        <button className="fragments-primary fragments-new" onClick={() => void createFragment()}>
+        <button
+          className="fragments-primary fragments-new"
+          disabled={creating}
+          onClick={() => void createFragment()}
+        >
           <Plus size={15} /> New Snippet
         </button>
         <nav className="fragments-navigation" aria-label="Fragments navigation">
@@ -1319,6 +1330,7 @@ function EditorToolbar({
   const {
     selectedItem,
     creationRevision,
+    creating,
     setMobilePane,
     rename,
     toggleStar,
@@ -1327,6 +1339,14 @@ function EditorToolbar({
     copy,
     trash,
   } = useAppContext();
+  const titleInput = useRef<HTMLInputElement>(null);
+  const focusedCreation = useRef(creationRevision);
+  useLayoutEffect(() => {
+    if (creating || focusedCreation.current === creationRevision || !titleInput.current) return;
+    focusedCreation.current = creationRevision;
+    titleInput.current.focus();
+    titleInput.current.select();
+  }, [creating, creationRevision]);
   return (
     <header className="fragments-editor-header">
       <button
@@ -1341,6 +1361,7 @@ function EditorToolbar({
         <>
           <div className="fragments-title-wrap">
             <input
+              ref={titleInput}
               key={`${creationRevision}:${selectedItem.path}:${selectedItem.title}`}
               aria-label="Fragment title"
               defaultValue={selectedItem.title}
@@ -1426,6 +1447,7 @@ function EditorPane() {
     view,
     plugin,
     createFragment,
+    creating,
   } = useAppContext();
   const [editingTags, setEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -1445,7 +1467,10 @@ function EditorPane() {
   };
   return (
     <>
-      <main className={`fragments-editor-pane ${mobilePane === "editor" ? "mobile-active" : ""}`}>
+      <main
+        className={`fragments-editor-pane ${mobilePane === "editor" ? "mobile-active" : ""}`}
+        aria-busy={creating}
+      >
         <EditorToolbar
           scratchOpen={scratchOpen}
           toggleScratchpad={() => setScratchOpen((open) => !open)}
@@ -1536,6 +1561,10 @@ function EditorPane() {
               )}
             </div>
           </>
+        ) : creating ? (
+          <div className="fragments-welcome" role="status">
+            <p>Creating fragment…</p>
+          </div>
         ) : (
           <div className="fragments-welcome">
             <FilePlus2 size={32} />

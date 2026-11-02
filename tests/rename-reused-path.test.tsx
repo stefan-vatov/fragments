@@ -27,13 +27,13 @@ const renameByBlur = (input: HTMLInputElement, value: string): void => {
   input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
 };
 
-async function mount() {
+async function mount(initialTitle = "Untitled fragment") {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
   document.body.replaceChildren();
   const { app, files, addFile } = createTestVault();
   addFile(
-    "Fragments/Untitled fragment.md",
-    '---\ntitle: "Untitled fragment"\ntags: []\n---\n\nFirst fragment body.\n',
+    `Fragments/${initialTitle}.md`,
+    `---\ntitle: ${JSON.stringify(initialTitle)}\ntags: []\n---\n\nFirst fragment body.\n`,
     1000,
   );
   const library = new FragmentLibrary(app, { folder: "Fragments" });
@@ -56,6 +56,102 @@ async function mount() {
 }
 
 describe("renaming a reused untitled filename", () => {
+  it("does not let an immediate rename after New edit the previous fragment", async () => {
+    const { app, files, host, root } = await mount("First note");
+    const previous = files.get("Fragments/First note.md")?.text;
+    let resumeCreate!: () => void;
+    let signalCreated!: () => void;
+    const gate = new Promise<void>((resolve) => (resumeCreate = resolve));
+    const started = new Promise<void>((resolve) => (signalCreated = resolve));
+    const originalCreate = app.vault.create.bind(app.vault);
+    app.vault.create = async (...args) => {
+      const file = await originalCreate(...args);
+      signalCreated();
+      await gate;
+      return file;
+    };
+    try {
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>(".fragments-new")!.click();
+        await started;
+      });
+      const staleTitle = host.querySelector<HTMLInputElement>('[aria-label="Fragment title"]');
+      // The new file already exists, but creation has not returned to the UI.
+      // Any title offered now must not still be editable for the old fragment.
+      if (staleTitle && !staleTitle.disabled && !staleTitle.readOnly) {
+        await act(async () => {
+          renameByBlur(staleTitle, "Immediate rename");
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        });
+      }
+      expect(files.get("Fragments/First note.md")?.text).toBe(previous);
+      expect(staleTitle === null || staleTitle.disabled || staleTitle.readOnly).toBe(true);
+      expect(host.querySelector<HTMLButtonElement>(".fragments-new")?.disabled).toBe(true);
+
+      await act(async () => {
+        resumeCreate();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(titleInput(host).value).toBe("Untitled fragment");
+      expect(document.activeElement).toBe(titleInput(host));
+      await act(async () => {
+        renameByBlur(titleInput(host), "Immediate rename");
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(files.get("Fragments/Immediate rename.md")?.text).toContain(
+        'title: "Immediate rename"',
+      );
+      expect(files.get("Fragments/Immediate rename.md")?.text).not.toContain(
+        "First fragment body.",
+      );
+      expect(files.get("Fragments/First note.md")?.text).toBe(previous);
+    } finally {
+      resumeCreate();
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it("restores the previous editor and its draft if creation fails", async () => {
+    const { app, files, host, root } = await mount("First note");
+    let rejectCreate!: (error: Error) => void;
+    const originalCreate = app.vault.create.bind(app.vault);
+    app.vault.create = () => new Promise((_, reject) => (rejectCreate = reject));
+    try {
+      await act(async () => {
+        const editor = host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')!;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          editor,
+          "Draft still belongs to the first note.",
+        );
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>(".fragments-new")!.click();
+      });
+      await act(async () => {
+        rejectCreate(new Error("Creation failed"));
+      });
+      expect(titleInput(host).value).toBe("First note");
+      expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')?.value).toBe(
+        "Draft still belongs to the first note.",
+      );
+      expect(host.querySelector<HTMLButtonElement>(".fragments-new")?.disabled).toBe(false);
+      app.vault.create = originalCreate;
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>(".fragments-new")!.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(titleInput(host).value).toBe("Untitled fragment");
+      expect(files.get("Fragments/First note.md")?.text).toContain(
+        "Draft still belongs to the first note.",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
   it("keeps queued renames attached to their own files while the first title is saving", async () => {
     const { app, files, host, root } = await mount();
 
