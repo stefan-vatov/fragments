@@ -5,6 +5,7 @@ import { AppShell } from "../src/app";
 import { FragmentLibrary } from "../src/library";
 import type FragmentsPlugin from "../src/main";
 import type { FragmentsView } from "../src/view";
+import type { ShellHandle } from "../src/app";
 import { createTestVault } from "./vault";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -49,13 +50,215 @@ async function mount(initialTitle = "Untitled fragment") {
   document.body.append(host);
   const view = { containerEl: host, contentEl: host } as unknown as FragmentsView;
   const root = createRoot(host);
+  let shell: ShellHandle | null = null;
   await act(async () => {
-    root.render(<AppShell plugin={plugin} view={view} handle={() => undefined} />);
+    root.render(
+      <AppShell
+        plugin={plugin}
+        view={view}
+        handle={(value) => {
+          shell = value;
+        }}
+      />,
+    );
   });
-  return { app, files, host, root };
+  return { app, library, files, host, root, command: () => shell! };
 }
 
 describe("renaming a reused untitled filename", () => {
+  it("keeps body edits made while a rename is waiting for its draft save", async () => {
+    const { app, files, host, root } = await mount("First note");
+    let resume!: () => void;
+    let signalStarted!: () => void;
+    const gate = new Promise<void>((resolve) => (resume = resolve));
+    const started = new Promise<void>((resolve) => (signalStarted = resolve));
+    const originalProcess = app.vault.process.bind(app.vault);
+    let first = true;
+    app.vault.process = async (...args) => {
+      if (first) {
+        first = false;
+        signalStarted();
+        await gate;
+      }
+      return originalProcess(...args);
+    };
+    const typeBody = (text: string): void => {
+      const editor = host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        editor,
+        text,
+      );
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    try {
+      await act(async () => {
+        typeBody("First draft before rename.");
+      });
+      await act(async () => {
+        renameByBlur(titleInput(host), "Renamed with latest body");
+        await started;
+      });
+      await act(async () => {
+        typeBody("Latest body typed during rename.");
+      });
+      await act(async () => {
+        resume();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(files.get("Fragments/Renamed with latest body.md")?.text).toContain(
+        "Latest body typed during rename.",
+      );
+      expect(titleInput(host).value).toBe("Renamed with latest body");
+    } finally {
+      resume();
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it("coalesces repeated New commands before the new file has been created", async () => {
+    const { app, files, host, root, command } = await mount("First note");
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => (resume = resolve));
+    const originalCreate = app.vault.create.bind(app.vault);
+    app.vault.create = async (...args) => {
+      await gate;
+      return originalCreate(...args);
+    };
+    try {
+      let creation!: Promise<void>;
+      await act(async () => {
+        creation = command().createFragment();
+        void command().createFragment();
+        void command().createFragment();
+      });
+      expect(host.querySelector('[aria-label="Fragment title"]')).toBeNull();
+      expect(files.size).toBe(1);
+      await act(async () => {
+        resume();
+        await creation;
+      });
+      expect(files.size).toBe(2);
+      expect(titleInput(host).value).toBe("Untitled fragment");
+      expect(document.activeElement).toBe(titleInput(host));
+    } finally {
+      resume();
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it("renames the new fragment while its body is still loading without saving the previous draft into it", async () => {
+    const { library, files, host, root } = await mount("First note");
+    const originalRead = library.read.bind(library);
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => (resume = resolve));
+    library.read = async (path) => {
+      if (path.endsWith("/Untitled fragment.md")) await gate;
+      return originalRead(path);
+    };
+    try {
+      await act(async () => {
+        const editor = host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')!;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          editor,
+          "Unsaved first draft.",
+        );
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>(".fragments-new")!.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(titleInput(host).value).toBe("Untitled fragment");
+      await act(async () => {
+        renameByBlur(titleInput(host), "New with slow body");
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(files.get("Fragments/New with slow body.md")?.text).toContain(
+        'title: "New with slow body"',
+      );
+      expect(files.get("Fragments/New with slow body.md")?.text).not.toContain(
+        "Unsaved first draft.",
+      );
+      expect(files.get("Fragments/First note.md")?.text).toContain("Unsaved first draft.");
+      expect(titleInput(host).value).toBe("New with slow body");
+    } finally {
+      resume();
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it.each([false, true])(
+    "keeps drafts correct after a late save, returning to the first note: %s",
+    async (returnToFirst) => {
+      const { app, files, host, root, command } = await mount("First note");
+      let resume!: () => void;
+      const gate = new Promise<void>((resolve) => (resume = resolve));
+      const originalProcess = app.vault.process.bind(app.vault);
+      let firstWrite = true;
+      app.vault.process = async (...args) => {
+        if (firstWrite) {
+          firstWrite = false;
+          await gate;
+        }
+        return originalProcess(...args);
+      };
+      const typeBody = (text: string): void => {
+        const editor = host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')!;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          editor,
+          text,
+        );
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      try {
+        await act(async () => {
+          typeBody("Saved first draft.");
+        });
+        let saving!: Promise<void>;
+        await act(async () => {
+          saving = command().saveDraft();
+        });
+        await act(async () => {
+          await command().createFragment();
+        });
+        expect(titleInput(host).value).toBe("Untitled fragment");
+        await act(async () => {
+          typeBody("New draft must survive.");
+        });
+        if (returnToFirst) {
+          await act(async () => {
+            [...host.querySelectorAll<HTMLButtonElement>(".fragments-result")]
+              .find(
+                (row) => row.querySelector(".fragments-result-name")?.textContent === "First note",
+              )!
+              .click();
+          });
+        }
+        await act(async () => {
+          resume();
+          await saving;
+        });
+        expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]')?.value).toBe(
+          returnToFirst ? "Saved first draft." : "New draft must survive.",
+        );
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        });
+        expect(files.get("Fragments/Untitled fragment.md")?.text).toContain(
+          "New draft must survive.",
+        );
+        expect(files.get("Fragments/First note.md")?.text).toContain("Saved first draft.");
+      } finally {
+        resume();
+        await act(async () => root.unmount());
+        host.remove();
+      }
+    },
+  );
+
   it("does not let an immediate rename after New edit the previous fragment", async () => {
     const { app, files, host, root } = await mount("First note");
     const previous = files.get("Fragments/First note.md")?.text;

@@ -65,22 +65,33 @@ const expectedVault = join(root, "Fragments Test");
 let created = false;
 let delayedTitleWrite = false;
 let delayedCreation = false;
+let delayedRead = false;
+let delayedSave = false;
 
 async function until(check, message) {
   for (let attempts = 0; attempts < 100; attempts++) {
     if (await check()) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Timed out: ${message}`);
+  const state = await page.evaluate(`({
+    title: document.querySelector('[aria-label="Fragment title"]')?.value,
+    body: document.querySelector('[aria-label="Fragment text"]')?.value,
+    readOnly: document.querySelector('[aria-label="Fragment text"]')?.readOnly
+  })`);
+  throw new Error(`Timed out: ${message}; editor: ${JSON.stringify(state)}`);
 }
 
 async function click(expression) {
   const point = await page.evaluate(`(() => {
     const element = ${expression};
     if (!element) throw new Error('Missing element');
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
     const bounds = element.getBoundingClientRect();
     if (!bounds.width || !bounds.height) throw new Error('Element is not visible');
-    return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    if (!element.contains(document.elementFromPoint(point.x, point.y)))
+      throw new Error('Pointer target is clipped or covered: ' + element.outerHTML.slice(0, 200));
+    return point;
   })()`);
   for (const type of ["mousePressed", "mouseReleased"]) {
     await page.send("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
@@ -429,6 +440,198 @@ try {
     destinationContent,
   );
 
+  const sourcePath = `${folderPath}/Slow draft source.md`;
+  await host.evaluate(`(async () => {
+    const note = await app.vault.create(${JSON.stringify(sourcePath)},
+      '---\\ntitle: Slow draft source\\n---\\n\\nSource body.\\n');
+    await app.plugins.plugins.fragments.library.refresh(note);
+  })()`);
+  await until(
+    () =>
+      page.evaluate(`!![...document.querySelectorAll('.fragments-result-name')].find(
+    name => name.innerText === 'Slow draft source')`),
+    "slow draft source appears",
+  );
+  await clickRow("Slow draft source");
+  await until(
+    () =>
+      page.evaluate(
+        `document.querySelector('[aria-label="Fragment text"]')?.value.includes('Source body.')`,
+      ),
+    "source body loaded",
+  );
+  await type('[aria-label="Fragment text"]', "Draft owned by the source note.");
+  await host.evaluate(`(() => {
+    const library = app.plugins.plugins.fragments.library;
+    const original = library.read;
+    window.__fragmentsOriginalRead = original;
+    library.read = async function (path) {
+      if (path === ${JSON.stringify(`${folderPath}/Untitled fragment.md`)})
+        await new Promise(resolve => { window.__fragmentsReleaseRead = resolve; });
+      return original.call(this, path);
+    };
+  })()`);
+  delayedRead = true;
+  await click(`document.querySelector('.fragments-new')`);
+  await until(
+    () => host.evaluate(`typeof window.__fragmentsReleaseRead === 'function'`),
+    "new body read is delayed",
+  );
+  await until(
+    async () => (await title()) === "Untitled fragment",
+    "new title is available before its body",
+  );
+  assert(
+    await page.evaluate(`(() => {
+    const body = document.querySelector('[aria-label="Fragment text"]');
+    return body.value === '' && body.readOnly;
+  })()`),
+    "loading a new body must not expose the previous draft",
+  );
+  await page.send("Input.insertText", { text: "Slow body renamed" });
+  await press("Enter", "Enter", 13);
+  await until(async () => {
+    try {
+      return (await readFile(file("Slow body renamed"), "utf8")).includes(
+        "title: Slow body renamed",
+      );
+    } catch {
+      return false;
+    }
+  }, "new note renames before its body read finishes");
+  assert(
+    !(await readFile(file("Slow body renamed"), "utf8")).includes(
+      "Draft owned by the source note.",
+    ),
+  );
+  assert(
+    (await readFile(file("Slow draft source"), "utf8")).includes("Draft owned by the source note."),
+  );
+  await host.evaluate(`(() => {
+    window.__fragmentsReleaseRead();
+    app.plugins.plugins.fragments.library.read = window.__fragmentsOriginalRead;
+    delete window.__fragmentsOriginalRead;
+    delete window.__fragmentsReleaseRead;
+  })()`);
+  delayedRead = false;
+  await until(
+    () =>
+      page.evaluate(`document.querySelector('.fragments-result.is-selected .fragments-result-name')?.innerText === 'Slow body renamed' &&
+    document.querySelector('[aria-label="Fragment title"]')?.value === 'Slow body renamed'`),
+    "slow-body rename selection settles before the next pointer target is measured",
+  );
+
+  await clickRow("Slow draft source");
+  await until(
+    () =>
+      page.evaluate(
+        `document.querySelector('[aria-label="Fragment text"]')?.value === 'Draft owned by the source note.'`,
+      ),
+    "source draft restored",
+  );
+  await type('[aria-label="Fragment text"]', "Late saved source body.");
+  await host.evaluate(`(() => {
+    const vault = app.vault;
+    const original = vault.process;
+    window.__fragmentsOriginalProcess = original;
+    let first = true;
+    vault.process = async function (...args) {
+      if (first && args[0].path === ${JSON.stringify(sourcePath)}) {
+        first = false;
+        await new Promise(resolve => { window.__fragmentsReleaseSave = resolve; });
+      }
+      return original.apply(this, args);
+    };
+  })()`);
+  delayedSave = true;
+  await click(`document.querySelector('.fragments-editor-footer button')`);
+  await until(
+    () => host.evaluate(`typeof window.__fragmentsReleaseSave === 'function'`),
+    "previous save is delayed",
+  );
+  await click(`document.querySelector('.fragments-new')`);
+  await until(
+    () =>
+      page.evaluate(`document.activeElement === document.querySelector('[aria-label="Fragment title"]') &&
+    document.activeElement?.value === 'Untitled fragment' &&
+    document.querySelector('[aria-label="Fragment text"]')?.readOnly === false`),
+    "new note ready while previous save waits",
+  );
+  await type('[aria-label="Fragment text"]', "New draft must survive the old save.");
+  await host.evaluate(`(() => {
+    window.__fragmentsReleaseSave();
+    app.vault.process = window.__fragmentsOriginalProcess;
+    delete window.__fragmentsOriginalProcess;
+    delete window.__fragmentsReleaseSave;
+  })()`);
+  delayedSave = false;
+  await until(
+    async () =>
+      (await readFile(file("Untitled fragment"), "utf8")).includes(
+        "New draft must survive the old save.",
+      ),
+    "new draft still autosaves after the previous save completes",
+  );
+  assert((await readFile(file("Slow draft source"), "utf8")).includes("Late saved source body."));
+  await type('[aria-label="Fragment title"]', "Late save renamed");
+  await press("Enter", "Enter", 13);
+  await until(async () => {
+    try {
+      return (await readFile(file("Late save renamed"), "utf8")).includes(
+        "New draft must survive the old save.",
+      );
+    } catch {
+      return false;
+    }
+  }, "rename keeps the surviving new draft");
+  await until(
+    () =>
+      page.evaluate(`document.querySelector('[aria-label="Fragment title"]')?.value === 'Late save renamed' &&
+    document.querySelector('[aria-label="Fragment text"]')?.value === 'New draft must survive the old save.' &&
+    document.querySelector('[aria-label="Fragment text"]')?.readOnly === false`),
+    "renamed editor is ready for another edit",
+  );
+  await type('[aria-label="Fragment text"]', "Draft before the last rename.");
+  await host.evaluate(`(() => {
+    const vault = app.vault;
+    const original = vault.process;
+    window.__fragmentsOriginalProcess = original;
+    let first = true;
+    vault.process = async function (...args) {
+      if (first && args[0].path === ${JSON.stringify(`${folderPath}/Late save renamed.md`)}) {
+        first = false;
+        await new Promise(resolve => { window.__fragmentsReleaseSave = resolve; });
+      }
+      return original.apply(this, args);
+    };
+  })()`);
+  delayedSave = true;
+  await type('[aria-label="Fragment title"]', "Renamed with latest body");
+  await press("Enter", "Enter", 13);
+  await until(
+    () => host.evaluate(`typeof window.__fragmentsReleaseSave === 'function'`),
+    "rename waits for its draft save",
+  );
+  await type('[aria-label="Fragment text"]', "Latest body typed during rename.");
+  await host.evaluate(`(() => {
+    window.__fragmentsReleaseSave();
+    app.vault.process = window.__fragmentsOriginalProcess;
+    delete window.__fragmentsOriginalProcess;
+    delete window.__fragmentsReleaseSave;
+  })()`);
+  delayedSave = false;
+  await until(async () => {
+    try {
+      const content = await readFile(file("Renamed with latest body"), "utf8");
+      return (
+        content.includes("Latest body typed during rename.") &&
+        content.includes("title: Renamed with latest body")
+      );
+    } catch {
+      return false;
+    }
+  }, "rename saves the body typed while the first save was delayed");
+
   await click(`document.querySelector('[title="New collection"]')`);
   const input = '[aria-label="Collection name"]';
   await until(
@@ -457,9 +660,26 @@ try {
   }, "Enter creates the collection on disk");
   await until(() => page.evaluate(`!document.querySelector('dialog')`), "collection dialog closes");
   console.log(
-    "Passed: immediate creation/rename, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; new-title focus and collection dialog Enter worked.",
+    "Passed: immediate creation/rename, slow body reads, late saves, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; new-title focus and collection dialog Enter worked.",
   );
 } finally {
+  if (delayedRead || delayedSave) {
+    await host.evaluate(`(() => {
+      if (window.__fragmentsOriginalRead) {
+        window.__fragmentsReleaseRead?.();
+        app.plugins.plugins.fragments.library.read = window.__fragmentsOriginalRead;
+        delete window.__fragmentsOriginalRead;
+        delete window.__fragmentsReleaseRead;
+      }
+      if (window.__fragmentsOriginalProcess) {
+        window.__fragmentsReleaseSave?.();
+        app.vault.process = window.__fragmentsOriginalProcess;
+        delete window.__fragmentsOriginalProcess;
+        delete window.__fragmentsReleaseSave;
+      }
+    })()`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   if (delayedCreation) {
     await host.evaluate(`(() => {
       window.__fragmentsReleaseCreate?.();

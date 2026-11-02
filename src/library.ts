@@ -160,6 +160,8 @@ export class FragmentLibrary {
   }
 
   async read(path: string): Promise<string> {
+    // Switching back to a note must read after its queued draft saves finish.
+    await this.pending.get(path)?.catch(() => undefined);
     const file = this.file(path);
     return bodyOf(await run(() => this.app.vault.cachedRead(file)));
   }

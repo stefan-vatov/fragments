@@ -315,6 +315,10 @@ collection, drives the real interface, and checks the resulting Markdown files.
 It also delays a real file creation to verify that immediate typing cannot rename
 the previous fragment, then checks that the new title receives focus and selects
 its text when creation finishes.
+The same script holds body reads and saves to check renaming before a new body
+loads, completing a previous note's save after editing a new note, and typing more
+body text while a rename waits for a save. It checks the persisted Markdown in
+each case. Unit tests also cover returning to a note before its queued save ends.
 
 ## 5. Verify app-window reuse through replacement and reload
 

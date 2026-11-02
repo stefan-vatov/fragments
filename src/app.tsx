@@ -108,110 +108,127 @@ function useKeyboard(
   }, [save, setDialog, view]);
 }
 
+interface DraftOwner {
+  path: string | null;
+  edits: number;
+}
+
+interface PendingDraft {
+  owner: DraftOwner;
+  path: string;
+  text: string;
+  expected: string;
+}
+
+interface DraftBuffer {
+  owner: DraftOwner;
+  body: string;
+  draft: string;
+  dirty: boolean;
+}
+
 function useDraft(
   library: FragmentLibrary,
   selected: string | null,
   modified: number | undefined,
   creationRevision: number,
 ) {
-  const [body, setBody] = useState("");
-  const [draft, setDraft] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const savedBody = useRef("");
-  const loadedPath = useRef<string | null>(null);
-  const pendingDraft = useRef<{ path: string; text: string } | null>(null);
+  // Returning to a path, or reusing an untitled filename, starts a new buffer.
+  const owner = useMemo<DraftOwner>(
+    () => ({ path: selected, edits: 0 }),
+    [selected, creationRevision],
+  );
+  const [buffer, setBuffer] = useState<DraftBuffer | null>(null);
+  const pendingDraft = useRef<PendingDraft | null>(null);
+  const ready = buffer?.owner === owner;
+  const body = ready ? buffer.body : "";
+  const draft = ready ? buffer.draft : "";
+  const dirty = ready && buffer.dirty;
+
+  const saved = useCallback((writing: PendingDraft): void => {
+    const latest = pendingDraft.current;
+    if (latest === writing) pendingDraft.current = null;
+    setBuffer((current) =>
+      current?.owner === writing.owner
+        ? { ...current, body: writing.text, dirty: latest !== writing && current.dirty }
+        : current,
+    );
+  }, []);
 
   useEffect(() => {
-    if (!selected) {
-      // The buffer, its dirty flag and the loaded-path marker describe one
-      // fragment together. Resetting only the buffer leaves `dirty` stale and
-      // `loadedPath` pointing at the old path, so the load guard below refuses
-      // to reload that path and the editor stays blank but still "unsaved".
-      loadedPath.current = null;
-      savedBody.current = "";
-      pendingDraft.current = null;
-      setBody("");
-      setDraft("");
-      setDirty(false);
+    if (!owner.path) {
+      setBuffer(null);
       return undefined;
     }
+    if (pendingDraft.current?.owner === owner) return undefined;
     let active = true;
+    const edits = owner.edits;
     void library
-      .read(selected)
+      .read(owner.path)
       .then((text) => {
-        if (!active) return;
-        // `pendingDraft` is live state, unlike a `dirty` value captured when
-        // this effect started. A draft for this path means the buffer already
-        // holds newer text than this read, so never overwrite it: a read that
-        // resolves after the user typed must not discard the edit.
-        if (pendingDraft.current?.path === selected) return;
-        loadedPath.current = selected;
-        savedBody.current = text;
-        setBody(text);
-        setDraft(text);
-        setDirty(false);
-        pendingDraft.current = null;
+        if (!active || owner.edits !== edits || pendingDraft.current?.owner === owner) return;
+        setBuffer({ owner, body: text, draft: text, dirty: false });
       })
-      .catch(errorNotice);
+      .catch((error: Error) => {
+        if (active) errorNotice(error);
+      });
     return () => {
       active = false;
     };
-  }, [selected, modified, library, creationRevision]);
+  }, [owner, modified, library]);
 
   useEffect(() => {
-    if (!selected || !dirty) return undefined;
+    if (!dirty) return undefined;
     const timer = window.setTimeout(() => {
       const writing = pendingDraft.current;
-      if (!writing || writing.path !== selected || writing.text !== draft) return;
+      if (!writing || writing.owner !== owner || writing.text !== draft) return;
       void library
-        .saveBody(selected, draft, body)
-        .then(() => {
-          savedBody.current = draft;
-          setBody(draft);
-          if (pendingDraft.current === writing) {
-            pendingDraft.current = null;
-            setDirty(false);
-          }
-        })
+        .saveBody(writing.path, writing.text, writing.expected)
+        .then(() => saved(writing))
         .catch(errorNotice);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [selected, draft, dirty, library, body]);
+  }, [owner, draft, dirty, library, saved]);
 
   useEffect(
     () => () => {
       const writing = pendingDraft.current;
-      if (writing?.path === selected)
-        void library.saveBody(writing.path, writing.text, savedBody.current).catch(errorNotice);
+      if (writing?.owner === owner)
+        void library
+          .saveBody(writing.path, writing.text, writing.expected)
+          .then(() => saved(writing))
+          .catch(errorNotice);
     },
-    [selected, library, creationRevision],
+    [owner, library, saved],
   );
 
   const save = useCallback(
     async (notify = true) => {
-      if (!selected || !dirty) return;
+      let writing = pendingDraft.current;
+      if (!writing || writing.owner !== owner) return;
       try {
-        await library.saveBody(selected, draft, body);
-        savedBody.current = draft;
-        setBody(draft);
-        setDirty(false);
-        pendingDraft.current = null;
+        while (writing?.owner === owner) {
+          await library.saveBody(writing.path, writing.text, writing.expected);
+          saved(writing);
+          writing = pendingDraft.current;
+        }
         if (notify) new Notice("Fragment saved");
       } catch (error) {
         if (!notify) throw error;
         errorNotice(error as Error);
       }
     },
-    [selected, dirty, library, draft, body],
+    [owner, library, saved],
   );
 
   const edit = (path: string, text: string): void => {
-    pendingDraft.current = { path, text };
-    setDraft(text);
-    setDirty(true);
+    if (!ready || path !== owner.path) return;
+    owner.edits++;
+    pendingDraft.current = { owner, path, text, expected: body };
+    setBuffer({ owner, body, draft: text, dirty: true });
   };
 
-  return { body, draft, dirty, save, edit };
+  return { body, draft, dirty, ready, save, edit };
 }
 
 function Preview({
@@ -257,10 +274,12 @@ function Preview({
 function HighlightedEditor({
   body,
   language,
+  readOnly,
   onChange,
 }: {
   body: string;
   language: string;
+  readOnly: boolean;
   onChange: (text: string) => void;
 }) {
   const pre = useRef<HTMLPreElement>(null);
@@ -278,6 +297,8 @@ function HighlightedEditor({
         aria-label="Fragment text"
         spellCheck={false}
         value={body}
+        readOnly={readOnly}
+        aria-busy={readOnly}
         onChange={(event) => onChange(event.target.value)}
         onScroll={(event) => {
           if (pre.current) {
@@ -285,7 +306,7 @@ function HighlightedEditor({
             pre.current.scrollLeft = event.currentTarget.scrollLeft;
           }
         }}
-        placeholder="Write your fragment…"
+        placeholder={readOnly ? "Loading fragment…" : "Write your fragment…"}
       />
     </div>
   );
@@ -592,12 +613,14 @@ function useController({ plugin, view, handle }: Props) {
     (selected
       ? [...(transitioning.current.get(selected)?.values() ?? [])].at(-1)?.item
       : undefined);
-  const { body, draft, dirty, save, edit } = useDraft(
-    library,
-    selectedItem?.path ?? null,
-    selectedItem?.modified,
-    creationRevision,
-  );
+  const {
+    body,
+    draft,
+    dirty,
+    ready: draftReady,
+    save,
+    edit,
+  } = useDraft(library, selectedItem?.path ?? null, selectedItem?.modified, creationRevision);
   const { toggleStar, updateTags, rename, move, trash, waitForMutations } = useFragmentMutations({
     app: plugin.app,
     library,
@@ -742,6 +765,7 @@ function useController({ plugin, view, handle }: Props) {
     body,
     draft,
     dirty,
+    draftReady,
     tags,
     filtered,
     searchIndex,
@@ -1441,6 +1465,7 @@ function EditorPane() {
     move,
     library,
     draft,
+    draftReady,
     dirty,
     body,
     edit,
@@ -1538,6 +1563,7 @@ function EditorPane() {
                   <HighlightedEditor
                     body={draft}
                     language={selectedItem.language}
+                    readOnly={!draftReady}
                     onChange={(text) => edit(selectedItem.path, text)}
                   />
                 ) : (
