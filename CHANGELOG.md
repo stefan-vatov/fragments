@@ -1,3 +1,9 @@
+## [1.5.6](https://github.com/stefan-vatov/fragments/compare/1.5.5...1.5.6) (2026-11-02)
+
+### Bug Fixes
+
+- block stale title edits while creating fragments ([ef31702](https://github.com/stefan-vatov/fragments/commit/ef31702c094b0ca4bdd8ed4f2aacbfc8ae3a8358))
+
 ## [1.5.5](https://github.com/stefan-vatov/fragments/compare/1.5.4...1.5.5) (2026-10-27)
 
 ### Bug Fixes
