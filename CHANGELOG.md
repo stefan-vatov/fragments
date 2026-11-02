@@ -1,3 +1,9 @@
+## [1.5.7](https://github.com/stefan-vatov/fragments/compare/1.5.6...1.5.7) (2026-11-02)
+
+### Bug Fixes
+
+- isolate drafts and finish saves before fragment renames ([007f4c0](https://github.com/stefan-vatov/fragments/commit/007f4c0415508324e2b8773f2b115cdeba889ba8))
+
 ## [1.5.6](https://github.com/stefan-vatov/fragments/compare/1.5.5...1.5.6) (2026-11-02)
 
 ### Bug Fixes
