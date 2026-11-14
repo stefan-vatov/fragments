@@ -66,7 +66,7 @@ describe("command palette and the active collection scope", () => {
     document.body.replaceChildren();
   });
 
-  it("opens the fragment picked from the palette even when it is outside the active collection", async () => {
+  it("opens a palette pick outside the active collection without losing the scope", async () => {
     const { host, root } = await renderShell();
 
     await act(async () => {
@@ -93,11 +93,13 @@ describe("command palette and the active collection scope", () => {
     });
 
     expect(host.querySelector(".fragments-palette")).toBeNull();
-    expect(host.querySelector(".fragments-list-summary")?.textContent).toContain("3 snippets");
+    // The pick opens, but the active collection scope is not discarded; the
+    // picked fragment is simply outside the filtered list.
+    expect(host.querySelector(".fragments-list-summary")?.textContent).toContain("2 snippets");
     expect(host.querySelector<HTMLInputElement>(".fragments-title-wrap input")?.value).toBe(
       "Gamma",
     );
-    expect(host.querySelector(".fragments-result.is-selected")?.textContent).toContain("Gamma");
+    expect(host.querySelector(".fragments-result.is-selected")).toBeNull();
 
     await act(async () => {
       root.unmount();

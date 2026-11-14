@@ -852,9 +852,9 @@ function useController({ plugin, view, handle }: Props) {
     setMobilePane("editor");
   };
   const chooseGlobal = (path: string): void => {
-    setScope({ kind: "all" });
-    setTagFilter("");
-    setQuery("");
+    // The auto-select effect keeps a selection when the filter did not change,
+    // so a pick from a global picker no longer needs to discard the list's
+    // scope, tag filter or query.
     choose(path);
   };
   const copy = async (): Promise<void> => {
