@@ -3,12 +3,37 @@ import { createRoot, type Root } from "react-dom/client";
 import { AppShell, type ShellHandle } from "./app";
 import { ErrorBoundary } from "./error-boundary";
 import type FragmentsPlugin from "./main";
+import type { SearchScope } from "./search";
 
 export const FRAGMENTS_VIEW = "fragments-view";
+
+// The part of the UI Obsidian restores with the leaf: which fragment is open,
+// the active filters, the view mode and the pad's visibility.
+export interface FragmentsViewState {
+  selected: string | null;
+  scope: SearchScope;
+  query: string;
+  tagFilter: string;
+  sort: "recent" | "name";
+  mode: "edit" | "preview";
+  mobilePane: "nav" | "list" | "editor";
+  scratchOpen: boolean;
+}
+
+// What the view serialises into Obsidian's workspace file. The index signature
+// keeps it assignable to the base `View.getState()` contract.
+export interface SerializedFragmentsState {
+  // Obsidian's workspace contract is an open dictionary; only `fragments` is ours.
+  // oxlint-disable-next-line thethracian/no-unsafe-dictionary-type
+  [key: string]: unknown;
+  fragments: FragmentsViewState;
+}
 
 export class FragmentsView extends ItemView {
   private root: Root | undefined;
   private shell: ShellHandle | null = null;
+  private snapshot: FragmentsViewState | null = null;
+  private scratchOpen = true;
   // Commands can run before the first React commit installs the shell; keep
   // their intent instead of dropping it.
   private pending: Array<{
@@ -43,6 +68,61 @@ export class FragmentsView extends ItemView {
   }
   getIcon(): string {
     return "blocks";
+  }
+
+  // Obsidian serialises the view state with the workspace; the controller reads
+  // it at mount and keeps it current.
+  getState(): SerializedFragmentsState {
+    const state: FragmentsViewState = {
+      ...(this.snapshot ?? {
+        selected: null,
+        scope: { kind: "all" },
+        query: "",
+        tagFilter: "",
+        sort: "recent",
+        mode: "edit",
+        mobilePane: "list",
+      }),
+      scratchOpen: this.scratchOpen,
+    };
+    return { fragments: state };
+  }
+
+  async setState(state: { fragments?: Partial<FragmentsViewState> } | null): Promise<void> {
+    const stored = state?.fragments;
+    this.snapshot = stored
+      ? {
+          selected: stored.selected ?? null,
+          scope: stored.scope ?? { kind: "all" },
+          query: stored.query ?? "",
+          tagFilter: stored.tagFilter ?? "",
+          sort: stored.sort === "name" ? "name" : "recent",
+          mode: stored.mode === "preview" ? "preview" : "edit",
+          mobilePane:
+            stored.mobilePane === "nav" || stored.mobilePane === "editor"
+              ? stored.mobilePane
+              : "list",
+          scratchOpen: stored.scratchOpen ?? true,
+        }
+      : null;
+    this.scratchOpen = stored?.scratchOpen ?? true;
+  }
+
+  readState(): FragmentsViewState | null {
+    return this.snapshot;
+  }
+
+  rememberState(state: Omit<FragmentsViewState, "scratchOpen">): void {
+    this.snapshot = { ...state, scratchOpen: this.scratchOpen };
+  }
+
+  readScratchOpen(): boolean {
+    return this.scratchOpen;
+  }
+
+  rememberScratchOpen(open: boolean): void {
+    this.scratchOpen = open;
+    if (this.snapshot) this.snapshot = { ...this.snapshot, scratchOpen: open };
   }
 
   async onOpen(): Promise<void> {

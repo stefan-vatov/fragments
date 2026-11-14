@@ -20,6 +20,7 @@ if (typeof Element !== "undefined") {
   }
 
   // Obsidian augments DOM elements with helpers the view code relies on.
+  type CreateOptions = { text?: string; cls?: string };
   type ObsidianElement = Element & {
     empty?: () => void;
     addClass?: (...classes: string[]) => void;
@@ -34,5 +35,23 @@ if (typeof Element !== "undefined") {
   };
   proto.removeClass ??= function removeClass(this: Element, ...classes: string[]): void {
     this.classList.remove(...classes);
+  };
+  const createEl = function createEl(
+    this: Element,
+    tag: string,
+    options?: CreateOptions,
+  ): HTMLElement {
+    const element = this.ownerDocument.createElement(tag);
+    if (options?.cls) element.className = options.cls;
+    if (options?.text !== undefined) element.textContent = options.text;
+    this.appendChild(element);
+    return element;
+  };
+  // Obsidian's typings augment Element with overloaded helpers; the runtime
+  // stubs only need the (tag, options) shape.
+  const helpers = Element.prototype as unknown as Record<string, unknown>;
+  helpers.createEl ??= createEl;
+  helpers.createDiv ??= function createDiv(this: Element, options?: CreateOptions): HTMLElement {
+    return createEl.call(this, "div", options);
   };
 }

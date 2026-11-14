@@ -35,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import type FragmentsPlugin from "./main";
-import type { FragmentsView } from "./view";
+import type { FragmentsView, FragmentsViewState } from "./view";
 import { TitleWriteError } from "./library";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
@@ -790,26 +790,49 @@ const paletteResults = (entries: Fragment[], query: string): Fragment[] => {
     .slice(0, 8);
 };
 
+function useRestoredState(view: FragmentsView): FragmentsViewState | null {
+  // Obsidian restores the serialised state before the first render; plain
+  // object views (tests, embeddings) may not implement the hooks.
+  const host = view as Partial<Pick<FragmentsView, "readState">>;
+  return host.readState?.() ?? null;
+}
+
+function usePersistedState(
+  view: FragmentsView,
+  state: Omit<FragmentsViewState, "scratchOpen">,
+): void {
+  const { selected, scope, query, tagFilter, sort, mode, mobilePane } = state;
+  useEffect(() => {
+    const host = view as Partial<Pick<FragmentsView, "rememberState">>;
+    host.rememberState?.({ selected, scope, query, tagFilter, sort, mode, mobilePane });
+  }, [view, selected, scope, query, tagFilter, sort, mode, mobilePane]);
+}
+
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
   const now = useNow();
   const entries = useMemo(() => library.entries(), [library, revision]);
-  const [scope, setScope] = useState<SearchScope>({ kind: "all" });
-  const [selected, setSelected] = useState<string | null>(null);
+  const restored = useRestoredState(view);
+  const [scope, setScope] = useState<SearchScope>(restored?.scope ?? { kind: "all" });
+  const [selected, setSelected] = useState<string | null>(restored?.selected ?? null);
   const [creationRevision, setCreationRevision] = useState(0);
   const [creating, setCreating] = useState(false);
   const creationPending = useRef(false);
   const transitioning = useRef<FragmentTransitions>(new Map());
-  const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState("");
-  const [sort, setSort] = useState<"recent" | "name">("recent");
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [query, setQuery] = useState(restored?.query ?? "");
+  const [tagFilter, setTagFilter] = useState(restored?.tagFilter ?? "");
+  const [sort, setSort] = useState<"recent" | "name">(restored?.sort ?? "recent");
+  const [mode, setMode] = useState<"edit" | "preview">(restored?.mode ?? "edit");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [newCollection, setNewCollection] = useState("");
-  const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">("list");
+  const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">(
+    restored?.mobilePane ?? "list",
+  );
+  // Keep the serialised state current so a workspace restore sees the last view.
+  usePersistedState(view, { selected, scope, query, tagFilter, sort, mode, mobilePane });
   const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
   const selectedItem =
     entries.find((item) => item.path === selected) ??
@@ -1874,7 +1897,10 @@ function EditorPane() {
   } = useAppContext();
   const [editingTags, setEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
-  const [scratchOpen, setScratchOpen] = useState(true);
+  const scratchHost = view as Partial<
+    Pick<FragmentsView, "readScratchOpen" | "rememberScratchOpen">
+  >;
+  const [scratchOpen, setScratchOpen] = useState(scratchHost.readScratchOpen?.() ?? true);
   const {
     text: scratchText,
     status: scratchStatus,
@@ -1896,7 +1922,12 @@ function EditorPane() {
       >
         <EditorToolbar
           scratchOpen={scratchOpen}
-          toggleScratchpad={() => setScratchOpen((open) => !open)}
+          toggleScratchpad={() => {
+            setScratchOpen((open) => {
+              scratchHost.rememberScratchOpen?.(!open);
+              return !open;
+            });
+          }}
         />
         {selectedItem ? (
           <>
