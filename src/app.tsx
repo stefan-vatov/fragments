@@ -913,7 +913,11 @@ function SidebarPane() {
             <span className="fragments-brand-mark">F</span>
             <strong>FRAGMENTS</strong>
           </div>
-          <button title="Search commands" onClick={() => setDialog("palette")}>
+          <button
+            title="Search commands"
+            aria-label="Search commands"
+            onClick={() => setDialog("palette")}
+          >
             <kbd>{shortcut}</kbd>
           </button>
         </header>
@@ -951,7 +955,11 @@ function SidebarPane() {
           </button>
           <div className="fragments-section-heading">
             <p className="fragments-section-label">Collections</p>
-            <button title="New collection" onClick={() => setDialog("collection")}>
+            <button
+              title="New collection"
+              aria-label="New collection"
+              onClick={() => setDialog("collection")}
+            >
               <Plus size={14} />
             </button>
           </div>
@@ -1511,7 +1519,7 @@ function EditorToolbar({
           >
             <Copy size={16} />
           </button>
-          <button title="Move to trash" onClick={() => void trash()}>
+          <button title="Move to trash" aria-label="Move to trash" onClick={() => void trash()}>
             <Trash2 size={16} />
           </button>
         </>
