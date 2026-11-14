@@ -78,8 +78,21 @@ export default class FragmentsPlugin extends Plugin {
         // A folder rename arrives as one event with no per-descendant events,
         // so evict the whole old subtree and rebuild under the new path.
         this.library.remove(oldPath);
-        if (file instanceof TFile) void this.library.refresh(file);
-        else if (file instanceof TFolder) void this.library.load();
+        if (file instanceof TFile) {
+          void this.library.refresh(file);
+          return;
+        }
+        if (!(file instanceof TFolder)) return;
+        // Renaming the library root (or a folder above it) would otherwise
+        // leave the setting on a path that no longer exists: the library
+        // indexes nothing and every save fails. Re-point it and persist.
+        const root = this.library.folder();
+        if (oldPath === root || root.startsWith(`${oldPath}/`)) {
+          this.settings.folder = `${file.path}${root.slice(oldPath.length)}`;
+          void this.saveSettings().then(() => this.library.load());
+          return;
+        }
+        void this.library.load();
       }),
     );
     this.registerEvent(
