@@ -6,6 +6,13 @@
 
 export class App {}
 
+export class Component {
+  unloaded = false;
+  unload(): void {
+    this.unloaded = true;
+  }
+}
+
 export class TAbstractFile {
   path = "";
   name = "";

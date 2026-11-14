@@ -12,7 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { MarkdownRenderer, Notice, Platform, TFile, type App } from "obsidian";
+import { Component, MarkdownRenderer, Notice, Platform, TFile, type App } from "obsidian";
 import {
   Blocks,
   ChevronDown,
@@ -284,13 +284,18 @@ function Preview({
       // Render into a detached staging node and swap it in only if this effect
       // is still current.
       const staging = element.ownerDocument.createElement("div");
+      // Embeds and post-processors register on the owning component; give each
+      // render its own so it can be unloaded when the preview goes away instead
+      // of accumulating on the long-lived view.
+      const component = new Component();
       let cancelled = false;
-      void MarkdownRenderer.render(plugin.app, body, staging, path, view).then(() => {
+      void MarkdownRenderer.render(plugin.app, body, staging, path, component).then(() => {
         if (cancelled || !ref.current) return;
         ref.current.replaceChildren(...staging.childNodes);
       });
       return () => {
         cancelled = true;
+        component.unload();
       };
     }
     const code = element.createEl("pre").createEl("code");
