@@ -439,10 +439,12 @@ function VirtualList({
   items,
   selected,
   select,
+  resetKey,
 }: {
   items: Fragment[];
   selected: string | null;
   select: (path: string) => void;
+  resetKey: string;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -455,6 +457,14 @@ function VirtualList({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    const node = viewport.current;
+    if (!node) return;
+    // A new scope, tag, query or sort is a new list: start at its first row
+    // instead of keeping the previous offset.
+    node.scrollTop = 0;
+    setScrollTop(0);
+  }, [resetKey]);
   useEffect(() => {
     const node = viewport.current;
     if (!node) return;
@@ -1121,6 +1131,7 @@ function ListPane() {
     const activeTag = tags.find(([tag]) => tag === tagFilter);
     if (activeTag) visibleTags.push(activeTag);
   }
+  const listIdentity = JSON.stringify([scope, tagFilter, query, sort]);
   return (
     <>
       <section
@@ -1173,7 +1184,12 @@ function ListPane() {
           </div>
         </header>
         {filtered.length ? (
-          <VirtualList items={filtered} selected={selected} select={choose} />
+          <VirtualList
+            items={filtered}
+            selected={selected}
+            select={choose}
+            resetKey={listIdentity}
+          />
         ) : (
           <div className="fragments-empty">
             No fragments found.
