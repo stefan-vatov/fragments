@@ -511,14 +511,20 @@ function useFragmentMutations({
       return occupant && occupant !== file ? current : next;
     });
   };
+  // Clicks between a mutation and the library re-render all read the same
+  // snapshot, so remember the intended value per path; otherwise two fast
+  // clicks queue the same write instead of undoing each other.
+  const starIntent = useRef(new Map<string, boolean>());
   const toggleStar = async (): Promise<void> => {
     if (!selectedItem) return;
     const source = selectedItem.path;
-    const starred = !selectedItem.starred;
+    const starred = !(starIntent.current.get(source) ?? selectedItem.starred);
+    starIntent.current.set(source, starred);
     try {
       const file = captureFile(source);
       await enqueue(() => library.updateProperties(file.path, { starred }));
     } catch (error) {
+      starIntent.current.delete(source);
       errorNotice(error as Error);
     }
   };
