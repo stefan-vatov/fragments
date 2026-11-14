@@ -55,7 +55,7 @@ export class Notice {
   }
 }
 
-export const Platform = { isMacOS: false };
+export const Platform = { isMacOS: false, isDesktopApp: false };
 
 export const MarkdownRenderer = {
   render: async (
