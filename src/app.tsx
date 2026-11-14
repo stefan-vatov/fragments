@@ -1161,14 +1161,9 @@ function useScratchpad(library: FragmentLibrary, path: string) {
       const next = current.text;
       current.pending = current.pending
         .then(async () => {
-          // A rejected write must not disable saving for the rest of the
-          // session. Adopt the file's current content as the new baseline
-          // first, so the external edit is not mistaken for a conflict again
-          // and the user's buffer can be written over it.
-          if (current.conflicted) {
-            current.saved = await library.readScratchpad(current.path);
-            current.conflicted = false;
-          }
+          // A conflicted session stays conflicted until the pad is reopened:
+          // adopting the file's text as a baseline here would let the next
+          // keystroke silently overwrite the external edit.
           if (next === current.saved) {
             if (session.current === current) setStatus("saved");
             return;
@@ -1180,10 +1175,11 @@ function useScratchpad(library: FragmentLibrary, path: string) {
             setStatus(current.text === current.saved ? "saved" : "dirty");
         })
         .catch((error: Error) => {
+          const first = !current.conflicted;
           current.conflicted = true;
           if (session.current === current) {
             setStatus("error");
-            errorNotice(error);
+            if (first) errorNotice(error);
           }
         });
     },
