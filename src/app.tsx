@@ -1696,12 +1696,13 @@ function EditorPane() {
                 <div className="fragments-properties">
                   <select
                     aria-label="Collection"
+                    title={selectedItem.collection || "No collection"}
                     value={selectedItem.collection}
                     onChange={(event) => void move(event.target.value)}
                   >
                     <option value="">No collection</option>
                     {library.collections().map((collection) => (
-                      <option key={collection} value={collection}>
+                      <option key={collection} value={collection} title={collection}>
                         {collection}
                       </option>
                     ))}
