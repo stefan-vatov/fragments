@@ -197,6 +197,10 @@ export class FragmentLibrary {
   }
 
   async readScratchpad(path: string): Promise<string> {
+    // Reopening the pad must read after any save queued for the same path has
+    // landed, the same way read() does for a fragment body. Otherwise a fresh
+    // session adopts the pre-save text as its baseline and can overwrite it.
+    await this.pending.get(path)?.catch(() => undefined);
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!file) return "";
     if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
