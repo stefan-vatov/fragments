@@ -1508,6 +1508,33 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     if (session.current) flush(session.current);
   };
 
+  // A conflict is otherwise unrecoverable while the view stays open: the pad
+  // path never changes, so the session would keep saving against a stale
+  // baseline. Re-reading the file rebaselines it.
+  const reloadScratchpad = useCallback((): void => {
+    const current = session.current;
+    if (!current) return;
+    if (current.timer !== undefined) window.clearTimeout(current.timer);
+    current.timer = undefined;
+    current.conflicted = false;
+    setStatus("loading");
+    void library
+      .readScratchpad(current.path)
+      .then((loaded) => {
+        if (session.current !== current) return;
+        current.text = loaded;
+        current.saved = loaded;
+        current.ready = true;
+        setText(loaded);
+        setStatus(library.hasScratchpad() ? "saved" : "empty");
+      })
+      .catch((error: Error) => {
+        if (session.current !== current) return;
+        setStatus("error");
+        errorNotice(error);
+      });
+  }, [library]);
+
   // The file can disappear while the pad is open (external delete); "saved" must
   // not outlive it.
   const shownStatus: ScratchpadStatus =
@@ -1517,6 +1544,7 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     status: session.current?.path === path ? shownStatus : "loading",
     editScratchpad,
     saveScratchpad,
+    reloadScratchpad,
   };
 }
 
@@ -1534,11 +1562,13 @@ function Scratchpad({
   status,
   onChange,
   onSave,
+  onReload,
 }: {
   text: string;
   status: ScratchpadStatus;
   onChange: (text: string) => void;
   onSave: () => void;
+  onReload: () => void;
 }) {
   return (
     <section className="fragments-scratchpad" aria-label="Scratchpad">
@@ -1547,6 +1577,11 @@ function Scratchpad({
         <span aria-live="polite" data-status={status}>
           {scratchpadStatusText[status]}
         </span>
+        {status === "error" && (
+          <button type="button" aria-label="Reload scratchpad" onClick={onReload}>
+            Reload
+          </button>
+        )}
       </header>
       <textarea
         dir="auto"
@@ -1924,6 +1959,7 @@ function EditorPane() {
     status: scratchStatus,
     editScratchpad,
     saveScratchpad,
+    reloadScratchpad,
   } = useScratchpad(library, library.scratchpadPath());
   const cancelTags = useRef(false);
   useEffect(() => setEditingTags(false), [selectedItem?.path]);
@@ -2042,6 +2078,7 @@ function EditorPane() {
                   status={scratchStatus}
                   onChange={editScratchpad}
                   onSave={saveScratchpad}
+                  onReload={reloadScratchpad}
                 />
               )}
             </div>
@@ -2068,6 +2105,7 @@ function EditorPane() {
                 status={scratchStatus}
                 onChange={editScratchpad}
                 onSave={saveScratchpad}
+                onReload={reloadScratchpad}
               />
             )}
           </div>
