@@ -514,10 +514,15 @@ function useFragmentMutations({
   const updateTags = async (value: string): Promise<void> => {
     if (!selectedItem) return;
     const source = selectedItem.path;
-    const tags = value
-      .split(",")
-      .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
-      .filter(Boolean);
+    // Collapse repeats so "Work, work" stores one tag and renders one chip.
+    const tags = [
+      ...new Set(
+        value
+          .split(",")
+          .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
+          .filter(Boolean),
+      ),
+    ];
     try {
       const file = captureFile(source);
       await enqueue(() => library.updateProperties(file.path, { tags }));

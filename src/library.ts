@@ -68,7 +68,12 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
   // sidebar counts, the tag scope filter and search all agree on one value.
   return {
     title,
-    tags: values.map((tag) => tag.trim().replace(/^#/, "").toLowerCase()).filter(Boolean),
+    // The write path joins tags with commas and the UI renders one chip per entry,
+    // so a repeated tag would show twice and inflate the sidebar counts. Collapse
+    // duplicates after canonicalisation, keeping first-occurrence order.
+    tags: [
+      ...new Set(values.map((tag) => tag.trim().replace(/^#/, "").toLowerCase()).filter(Boolean)),
+    ],
     starred: Option.getOrElse(decodeBoolean(raw?.starred), () => false),
     language:
       Option.getOrElse(decodeString(raw?.language), () => "plaintext").trim() || "plaintext",
