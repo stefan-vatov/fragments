@@ -1467,7 +1467,7 @@ function GlobalSearch() {
           } else if (event.key === "End" && results.length) {
             event.preventDefault();
             setActive(results.length - 1);
-          } else if (event.key === "Enter" && results[active]) {
+          } else if (event.key === "Enter" && !event.nativeEvent.isComposing && results[active]) {
             event.preventDefault();
             select(results[active].path);
           } else if (event.key === "Escape") {
@@ -1589,7 +1589,8 @@ function EditorToolbar({
                 });
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                  event.currentTarget.blur();
                 if (event.key === "Escape") {
                   // Cancel the edit: restore the committed title, then blur so the
                   // field does not keep the abandoned text (rename() sees no change).
@@ -1745,7 +1746,8 @@ function EditorPane() {
                         onChange={(event) => setTagDraft(event.target.value)}
                         onBlur={finishTags}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
+                          if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                            event.currentTarget.blur();
                           if (event.key === "Escape") {
                             cancelTags.current = true;
                             event.currentTarget.blur();
@@ -1895,7 +1897,8 @@ function Dialogs() {
                       event.preventDefault();
                       setPaletteIndex(Math.max(paletteIndex - 1, 0));
                     }
-                    if (event.key === "Enter") choosePalette(paletteIndex);
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                      choosePalette(paletteIndex);
                   }}
                   placeholder="Type a command or search…"
                 />
@@ -1957,7 +1960,7 @@ function Dialogs() {
                 onChange={(event) => setNewCollection(event.target.value)}
                 placeholder="Collection name"
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     event.currentTarget.form?.requestSubmit();
                   }
