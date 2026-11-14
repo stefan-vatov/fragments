@@ -40,6 +40,10 @@ const run = async <A>(operation: () => Promise<A>): Promise<A> => {
 };
 const decodeString = Schema.decodeUnknownOption(Schema.String);
 const decodeBoolean = Schema.decodeUnknownOption(Schema.Boolean);
+const decodeBooleanText = Schema.decodeUnknownOption(
+  Schema.Literal("true", "yes", "1", "false", "no", "0"),
+);
+const decodeBooleanNumber = Schema.decodeUnknownOption(Schema.Literal(1, 0));
 const decodeTags = Schema.decodeUnknownOption(
   Schema.Union(Schema.Array(Schema.String), Schema.String),
 );
@@ -64,6 +68,11 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
   // whitespace must stay inside a tag for the round-trip to be lossless.
   const values = Schema.is(Schema.String)(tagValue) ? tagValue.split(",") : tagValue;
   const title = Option.getOrUndefined(decodeString(raw?.title));
+  // Tools that write frontmatter do not all agree on booleans: Obsidian's parser
+  // yields a string for `starred: "true"` and for YAML-1.1 spellings like `yes`.
+  const starredValue = Option.getOrUndefined(decodeBoolean(raw?.starred));
+  const starredText = Option.getOrUndefined(decodeBooleanText(raw?.starred));
+  const starredNumber = Option.getOrUndefined(decodeBooleanNumber(raw?.starred));
   // Tags are case-insensitive (as in Obsidian). Canonicalise once here so the
   // sidebar counts, the tag scope filter and search all agree on one value.
   return {
@@ -74,7 +83,12 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
     tags: [
       ...new Set(values.map((tag) => tag.trim().replace(/^#/, "").toLowerCase()).filter(Boolean)),
     ],
-    starred: Option.getOrElse(decodeBoolean(raw?.starred), () => false),
+    starred:
+      starredValue ??
+      (starredNumber === 1 ||
+        starredText === "true" ||
+        starredText === "yes" ||
+        starredText === "1"),
     language:
       Option.getOrElse(decodeString(raw?.language), () => "plaintext").trim() || "plaintext",
   };
