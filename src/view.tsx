@@ -1,6 +1,7 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 import { AppShell, type ShellHandle } from "./app";
+import { ErrorBoundary } from "./error-boundary";
 import type FragmentsPlugin from "./main";
 
 export const FRAGMENTS_VIEW = "fragments-view";
@@ -49,7 +50,9 @@ export class FragmentsView extends ItemView {
     this.contentEl.addClass("fragments-host");
     this.root = createRoot(this.contentEl);
     this.root.render(
-      <AppShell plugin={this.plugin} view={this} handle={(value) => this.install(value)} />,
+      <ErrorBoundary>
+        <AppShell plugin={this.plugin} view={this} handle={(value) => this.install(value)} />
+      </ErrorBoundary>,
     );
   }
 
