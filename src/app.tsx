@@ -166,6 +166,9 @@ function useDraft(
   const pendingDraft = useRef<PendingDraft | null>(null);
   const ready = buffer?.owner === owner;
   const body = ready ? buffer.body : "";
+  // Readable from the effect below without re-subscribing on every keystroke.
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   const draft = ready ? buffer.draft : "";
   const dirty = ready && buffer.dirty;
 
@@ -185,6 +188,10 @@ function useDraft(
       return undefined;
     }
     if (pendingDraft.current?.owner === owner) return undefined;
+    // The index pass already read the body we just wrote (or a star/tag edit
+    // left it untouched); reading it back would only churn the buffer and
+    // re-render the preview for no visible change.
+    if (bodyRef.current && library.indexedBody(owner.path) === bodyRef.current) return undefined;
     let active = true;
     const edits = owner.edits;
     void library

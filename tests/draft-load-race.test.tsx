@@ -71,8 +71,10 @@ describe("draft load racing with typing", () => {
         };
       });
 
-    // An external touch bumps the fragment's mtime and makes the load effect
-    // issue a fresh read for the still-clean fragment.
+    // Another leaf changes the body, which makes the load effect issue a fresh
+    // read for the still-clean fragment.
+    const entry = files.get("Fragments/alpha.md");
+    if (entry) entry.text = "Body of Alpha, edited elsewhere\n";
     (file as unknown as { stat: { mtime: number } }).stat.mtime += 60_000;
     await act(async () => {
       await library.refresh(file);
@@ -91,11 +93,14 @@ describe("draft load racing with typing", () => {
     expect(editorOf(host)?.value).toBe("USER TYPED THIS");
     expect(footerOf(host)).toContain("Unsaved changes");
 
-    // The draft still autosaves to disk.
+    // The draft autosaves, but against an external edit it must conflict rather
+    // than overwrite: the file keeps the other leaf's text and the typed draft
+    // stays in the editor.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 800));
     });
-    expect(files.get("Fragments/alpha.md")?.text).toContain("USER TYPED THIS");
+    expect(files.get("Fragments/alpha.md")?.text).toContain("edited elsewhere");
+    expect(editorOf(host)?.value).toBe("USER TYPED THIS");
 
     await act(async () => {
       root.unmount();

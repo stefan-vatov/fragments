@@ -164,6 +164,9 @@ export class FragmentLibrary {
   entries = (): Fragment[] => [...this.fragments.values()];
   folder = (): string => cleanFolder(this.settings.folder) || "Fragments";
   scratchpadPath = (): string => `${this.folder()}/${SCRATCHPAD_NAME}`;
+  // The body the index most recently read for a path, so callers can tell
+  // whether a change they are reacting to is one they already hold.
+  indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);
   contains = (path: string): boolean => {
     const folder = this.folder();
     return (
