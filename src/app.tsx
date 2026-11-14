@@ -1016,16 +1016,32 @@ function useAppContext(): Controller {
   return context;
 }
 
-// Below 800px only the active pane is displayed; the pane that held focus is
-// hidden, so focus would fall to the document body.
-function usePaneFocus(pane: "nav" | "list" | "editor", view: FragmentsView): void {
+// The pane layout follows the leaf's own width: a Fragments tab in a narrow
+// sidebar must collapse even when the window is wide.
+function useNarrowLayout(view: FragmentsView): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const node = view.containerEl;
+    const update = (width: number): void => setNarrow(width > 0 && width < 800);
+    update(node.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) update(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [view]);
+  return narrow;
+}
+
+// When only the active pane is displayed the pane that held focus is hidden,
+// so focus would fall to the document body.
+function usePaneFocus(pane: "nav" | "list" | "editor", view: FragmentsView, narrow: boolean): void {
   const previous = useRef(pane);
   useEffect(() => {
     if (previous.current === pane) return;
     previous.current = pane;
-    const media = (window as Window & { matchMedia?: (query: string) => MediaQueryList })
-      .matchMedia;
-    if (!media || !media("(max-width: 800px)").matches) return;
+    if (!narrow) return;
     const element =
       pane === "list"
         ? (view.containerEl.querySelector<HTMLElement>(".fragments-result.is-selected") ??
@@ -1034,19 +1050,20 @@ function usePaneFocus(pane: "nav" | "list" | "editor", view: FragmentsView): voi
             pane === "nav" ? ".fragments-navigation button" : 'input[aria-label="Fragment title"]',
           );
     element?.focus();
-  }, [pane, view]);
+  }, [pane, view, narrow]);
 }
 
 export function AppShell(props: Props) {
   useSyncExternalStore(props.plugin.subscribeSettings, props.plugin.settingsSnapshot);
   const controller = useController(props);
-  usePaneFocus(controller.mobilePane, props.view);
+  const narrow = useNarrowLayout(props.view);
+  usePaneFocus(controller.mobilePane, props.view, narrow);
   const style = {
     "--frag-snippet-font": snippetFontFamily(controller.plugin.settings),
   } as CSSProperties;
   return (
     <AppContext.Provider value={controller}>
-      <div className="fragments-app" style={style}>
+      <div className="fragments-app" style={style} data-narrow={narrow ? "true" : undefined}>
         <MobileBar />
         <SidebarPane />
         <ListPane />

@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { AppShell } from "../src/app";
 import { FragmentLibrary } from "../src/library";
 import type FragmentsPlugin from "../src/main";
@@ -24,22 +24,6 @@ describe("mobile pane focus", () => {
   beforeEach(() => {
     globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
     document.body.replaceChildren();
-    // jsdom has no matchMedia; emulate a narrow viewport.
-    window.matchMedia = ((query: string) => ({
-      matches: query.includes("max-width"),
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia;
-  });
-
-  afterEach(() => {
-    // @ts-expect-error -- jsdom starts without matchMedia.
-    delete window.matchMedia;
   });
 
   it("moves focus into the pane that is shown", async () => {
@@ -56,6 +40,8 @@ describe("mobile pane focus", () => {
       settingsSnapshot: () => 0,
     } as unknown as FragmentsPlugin;
     const viewEl = document.createElement("div");
+    // The pane layout follows the leaf width, not the window.
+    Object.defineProperty(viewEl, "clientWidth", { value: 400, configurable: true });
     document.body.append(viewEl);
     const view = { containerEl: viewEl, contentEl: viewEl } as unknown as FragmentsView;
     const root = createRoot(viewEl);

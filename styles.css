@@ -1164,3 +1164,74 @@
   padding: 32px;
   text-align: center;
 }
+
+/* A narrow leaf keeps the single-pane layout even when the window is wide; the
+   observed width sets data-narrow on the app root. */
+.fragments-app[data-narrow="true"] {
+  display: block;
+  position: relative;
+  padding-top: 42px;
+}
+.fragments-app[data-narrow="true"] .fragments-mobile-bar {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 42px;
+  padding: 0 10px;
+  border-bottom: 1px solid #333;
+  background: #1a1a1a;
+  color: var(--frag-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.fragments-app[data-narrow="true"] .fragments-mobile-bar button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+}
+.fragments-app[data-narrow="true"] .fragments-sidebar,
+.fragments-app[data-narrow="true"] .fragments-list-pane,
+.fragments-app[data-narrow="true"] .fragments-editor-pane {
+  display: none;
+  height: 100%;
+  width: 100%;
+}
+.fragments-app[data-narrow="true"] .fragments-sidebar.mobile-active,
+.fragments-app[data-narrow="true"] .fragments-list-pane.mobile-active,
+.fragments-app[data-narrow="true"] .fragments-editor-pane.mobile-active {
+  display: flex;
+}
+.fragments-app[data-narrow="true"] .fragments-editor-header {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 82px;
+  gap: 2px 8px;
+  padding: 6px 12px;
+}
+.fragments-app[data-narrow="true"] .fragments-editor-header > .fragments-back {
+  display: grid;
+  order: -1;
+  transform: rotate(180deg);
+}
+.fragments-app[data-narrow="true"] .fragments-title-wrap {
+  flex: 1 1 100%;
+  order: -1;
+}
+.fragments-app[data-narrow="true"] .fragments-editor-workspace.has-scratchpad {
+  flex-direction: column;
+}
+.fragments-app[data-narrow="true"]
+  .fragments-editor-workspace.has-scratchpad
+  .fragments-fragment-content,
+.fragments-app[data-narrow="true"] .fragments-scratchpad {
+  flex: 1 1 50%;
+}
+.fragments-app[data-narrow="true"] .fragments-scratchpad {
+  border-top: 1px solid var(--frag-line);
+  border-left: 0;
+}
