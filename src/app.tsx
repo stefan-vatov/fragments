@@ -1537,14 +1537,34 @@ function Scratchpad({
   );
 }
 
+const WHITESPACE = /\s/;
+
+// A full trim/split normalises the whole draft; a single scan is cheaper and
+// only runs when the body changes.
+function countWords(text: string): number {
+  let words = 0;
+  let inWord = false;
+  for (const character of text) {
+    if (WHITESPACE.test(character)) {
+      inWord = false;
+      continue;
+    }
+    if (!inWord) {
+      inWord = true;
+      words += 1;
+    }
+  }
+  return words;
+}
+
 function FragmentFooter() {
   const { draft, dirty, selectedItem, save } = useAppContext();
+  const counts = useMemo(() => ({ chars: draft.length, words: countWords(draft) }), [draft]);
   if (!selectedItem) return null;
   return (
     <footer className="fragments-editor-footer">
       <span>
-        {draft.length.toLocaleString()} chars ·{" "}
-        {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+        {counts.chars.toLocaleString()} chars · {counts.words} words
       </span>
       <span>{dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}</span>
       <button disabled={!dirty} onClick={() => void save()}>
