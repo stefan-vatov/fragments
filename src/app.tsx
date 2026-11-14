@@ -1779,6 +1779,14 @@ function EditorToolbar({
     titleInput.current.focus();
     titleInput.current.select();
   }, [creating, creationRevision]);
+  // Keep the uncontrolled field in sync with the committed title unless the user
+  // is editing it: remounting the input on every title change would drop the
+  // text typed but not yet committed.
+  useEffect(() => {
+    const input = titleInput.current;
+    if (!input || input === input.ownerDocument.activeElement) return;
+    if (input.value !== selectedItem?.title) input.value = selectedItem?.title ?? "";
+  }, [selectedItem?.title]);
   return (
     <header className="fragments-editor-header">
       <button
@@ -1795,7 +1803,7 @@ function EditorToolbar({
             <input
               dir="auto"
               ref={titleInput}
-              key={`${creationRevision}:${selectedItem.path}:${selectedItem.title}`}
+              key={`${creationRevision}:${selectedItem.path}`}
               aria-label="Fragment title"
               defaultValue={selectedItem.title}
               onBlur={(event) => {
