@@ -189,7 +189,8 @@ export class FragmentLibrary {
     return (
       path.startsWith(`${folder}/`) &&
       path.endsWith(".md") &&
-      path !== `${folder}/${SCRATCHPAD_NAME}`
+      // Case-insensitive vaults resolve the case variant to the pad file.
+      path.toLowerCase() !== `${folder}/${SCRATCHPAD_NAME}`.toLowerCase()
     );
   };
 
@@ -378,7 +379,7 @@ export class FragmentLibrary {
     const next = this.availablePath(parent, safe, file);
     // Check the final, de-duplicated path: an already-taken reserved title
     // becomes "_fragments-scratchpad (1)" and cannot collide with the pad file.
-    if (next === this.scratchpadPath())
+    if (next.toLowerCase() === this.scratchpadPath().toLowerCase())
       throw new Error("That title is reserved for the scratchpad.");
     if (next !== path) {
       await run(() => this.app.fileManager.renameFile(file, next));
@@ -418,7 +419,7 @@ export class FragmentLibrary {
     const base = unique === title ? safeFileName(file.basename) : safeFileName(unique);
     const next = this.availablePath(folder, base, file);
     // Only the final path matters: a name that gets suffixed is not the pad file.
-    if (next === this.scratchpadPath())
+    if (next.toLowerCase() === this.scratchpadPath().toLowerCase())
       throw new Error("That filename is reserved for the scratchpad.");
     if (next === path) return path;
     await run(() => this.app.fileManager.renameFile(file, next));
