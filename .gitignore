@@ -688,3 +688,7 @@ $RECYCLE.BIN/
 
 # Local issue-tracker state (beads) is not part of the plugin.
 /.beads/
+
+# Mutation testing output
+.stryker-tmp/
+reports/
