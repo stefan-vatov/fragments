@@ -1,13 +1,24 @@
 // The bundle smoke test runs in the node environment, where none of these DOM
 // patches apply; only the jsdom suites need them.
 if (typeof HTMLDialogElement !== "undefined") {
-  // jsdom does not implement the native dialog methods used by Obsidian's renderer.
+  // jsdom does not implement the native dialog methods used by Obsidian's
+  // renderer. Model the two behaviours the app depends on: focus moves into the
+  // dialog and returns to the trigger when it closes.
   if (!HTMLDialogElement.prototype.showModal) {
+    const previousFocus = new WeakMap<HTMLDialogElement, Element | null>();
     HTMLDialogElement.prototype.showModal = function (): void {
+      previousFocus.set(this, document.activeElement);
       this.setAttribute("open", "");
+      this.querySelector<HTMLElement>(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+      )?.focus();
     };
     HTMLDialogElement.prototype.close = function (): void {
       this.removeAttribute("open");
+      const previous = previousFocus.get(this);
+      previousFocus.delete(this);
+      if (previous instanceof HTMLElement) previous.focus();
+      this.dispatchEvent(new Event("close"));
     };
   }
 }
