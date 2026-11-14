@@ -1215,7 +1215,7 @@ function ScratchpadToggle({ open, toggle }: { open: boolean; toggle: () => void 
   );
 }
 
-type ScratchpadStatus = "loading" | "dirty" | "saving" | "saved" | "error";
+type ScratchpadStatus = "loading" | "empty" | "dirty" | "saving" | "saved" | "error";
 
 interface ScratchpadSession {
   path: string;
@@ -1286,7 +1286,7 @@ function useScratchpad(library: FragmentLibrary, path: string) {
         current.saved = loaded;
         current.ready = true;
         setText(loaded);
-        setStatus("saved");
+        setStatus(library.hasScratchpad() ? "saved" : "empty");
       })
       .catch((error: Error) => {
         if (!active) return;
@@ -1331,6 +1331,7 @@ function useScratchpad(library: FragmentLibrary, path: string) {
 
 const scratchpadStatusText: Record<ScratchpadStatus, string> = {
   loading: "Loading…",
+  empty: "Not saved yet",
   dirty: "Unsaved changes",
   saving: "Saving…",
   saved: "Saved in vault",

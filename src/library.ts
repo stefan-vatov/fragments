@@ -171,6 +171,10 @@ export class FragmentLibrary {
   entries = (): Fragment[] => [...this.fragments.values()];
   folder = (): string => cleanFolder(this.settings.folder) || "Fragments";
   scratchpadPath = (): string => `${this.folder()}/${SCRATCHPAD_NAME}`;
+  // Whether the pad file exists yet; the header must not claim it is saved
+  // before the first write creates it.
+  hasScratchpad = (): boolean =>
+    this.app.vault.getAbstractFileByPath(this.scratchpadPath()) instanceof TFile;
   // The body the index most recently read for a path, so callers can tell
   // whether a change they are reacting to is one they already hold.
   indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);
