@@ -331,7 +331,12 @@ function HighlightedEditor({
   const pre = useRef<HTMLPreElement>(null);
   const code = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (code.current) highlightCode(code.current, body, language);
+    const element = code.current;
+    if (!element) return undefined;
+    // Re-tokenising a large body on every keystroke makes typing lag; paint
+    // shortly after the last change instead.
+    const timer = window.setTimeout(() => highlightCode(element, body, language), 100);
+    return () => window.clearTimeout(timer);
   }, [body, language]);
   return (
     <div className="fragments-highlight-editor">
