@@ -242,7 +242,11 @@ export class FragmentLibrary {
           }
           const info = getFrontMatterInfo(source);
           const header = info.exists ? source.slice(0, info.contentStart) : "";
-          return `${header}${header ? "\n" : ""}${body}`;
+          // Reuse the separator the note already had. Adding one unconditionally
+          // inserts a blank line into notes authored without it.
+          const after = info.exists ? source.slice(info.contentStart) : "";
+          const separator = after.startsWith("\r\n") ? "\r\n" : after.startsWith("\n") ? "\n" : "";
+          return `${header}${separator}${body}`;
         }),
       );
       this.written.set(path, body);
