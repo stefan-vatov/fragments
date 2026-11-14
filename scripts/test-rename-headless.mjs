@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { connect } from "./cdp-client.mjs";
 
 const root = resolve(process.env.FRAGMENTS_TEST_ROOT ?? "");
 const port = Number(process.env.FRAGMENTS_CDP_PORT);
@@ -18,47 +19,30 @@ const response = await fetch(`http://127.0.0.1:${port}/json/list`);
 if (!response.ok) throw new Error("Cannot list Obsidian debugging targets");
 const targets = await response.json();
 const main = targets.find((target) => target.type === "page" && target.url.endsWith("/index.html"));
-const popout = targets.find((target) => target.type === "page" && target.url === "about:blank");
-if (!main || !popout) throw new Error("Open Fragments in the isolated test vault first");
-
-async function connect(target) {
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.onopen = resolve;
-    socket.onerror = reject;
-  });
-  let id = 0;
-  const pending = new Map();
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    const request = pending.get(message.id);
-    if (!request) return;
-    clearTimeout(request.timer);
-    pending.delete(message.id);
-    if (message.error) request.reject(new Error(JSON.stringify(message.error)));
-    else request.resolve(message.result);
-  };
-  const send = (method, params = {}) =>
-    new Promise((resolve, reject) => {
-      const requestId = ++id;
-      const timer = setTimeout(() => reject(new Error(`Timed out: ${method}`)), 15000);
-      pending.set(requestId, { resolve, reject, timer });
-      socket.send(JSON.stringify({ id: requestId, method, params }));
-    });
-  const evaluate = async (expression) => {
-    const result = await send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-  return { send, evaluate, close: () => socket.close() };
-}
+if (!main) throw new Error("Open Obsidian in the isolated test vault first");
 
 const host = await connect(main);
-const page = await connect(popout);
+
+// Fragments lives in a popout whose about:blank URL carries no name, so probe
+// each blank page for the view instead of assuming it owns the only one.
+async function findFragmentsPage() {
+  const candidates = targets.filter(
+    (target) => target.type === "page" && target.url === "about:blank",
+  );
+  for (const candidate of candidates) {
+    const probe = await connect(candidate);
+    try {
+      if (await probe.evaluate('Boolean(document.querySelector(".fragments-app"))')) return probe;
+    } catch {
+      // Not this window, or it has not finished loading; try the next one.
+    }
+    probe.close();
+  }
+  return undefined;
+}
+
+const page = await findFragmentsPage();
+if (!page) throw new Error("Open Fragments in the isolated test vault first");
 const folder = `Rename regression ${randomUUID()}`;
 const folderPath = `Fragments/${folder}`;
 const expectedVault = join(root, "Fragments Test");
