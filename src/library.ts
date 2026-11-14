@@ -412,7 +412,10 @@ export class FragmentLibrary {
   private fragmentFrom(file: TFile, matter: ParsedMetadata): Fragment {
     const previous = this.fragments.get(file.path);
     const collection = file.parent?.path.slice(this.folder().length).replace(/^\//, "") ?? "";
-    const title = matter.title ?? file.basename;
+    // A blank or whitespace-only frontmatter title is not a usable name, so it
+    // falls back to the file name exactly like a missing title does. Non-blank
+    // titles are kept verbatim, including any surrounding spaces.
+    const title = matter.title?.trim() ? matter.title : file.basename;
     return {
       path: file.path,
       title,
