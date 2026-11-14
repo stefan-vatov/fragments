@@ -118,6 +118,7 @@ export function snippetFontFamily(
 
 export class FragmentsSettingTab extends PluginSettingTab {
   private folderSuggest: FolderSuggest | undefined;
+  private folderUpdate: Promise<void> | null = null;
 
   constructor(
     app: App,
@@ -167,8 +168,27 @@ export class FragmentsSettingTab extends PluginSettingTab {
     super.hide();
   }
 
-  private async updateFolder(text: TextComponent): Promise<void> {
-    if (text.getValue() === this.plugin.settings.folder) return;
+  private updateFolder(text: TextComponent): Promise<void> {
+    // A suggestion can fire while the previous change is still reloading; two
+    // concurrent changes would race their settings saves and leave the field
+    // disagreeing with the loaded library.
+    if (this.folderUpdate) {
+      this.folderSuggest?.close();
+      text.setValue(this.plugin.settings.folder);
+      return this.folderUpdate;
+    }
+    // The popup would otherwise stay attached while the field is disabled.
+    this.folderSuggest?.close();
+    this.folderUpdate = this.applyFolder(text).finally(() => {
+      this.folderUpdate = null;
+    });
+    return this.folderUpdate;
+  }
+
+  private async applyFolder(text: TextComponent): Promise<void> {
+    // The field can be rewritten while this waits, so hold the requested value.
+    const requested = text.getValue();
+    if (requested === this.plugin.settings.folder) return;
     const previous = this.plugin.settings.folder;
     text.inputEl.disabled = true;
     try {
@@ -180,7 +200,7 @@ export class FragmentsSettingTab extends PluginSettingTab {
       return;
     }
     try {
-      await this.plugin.library.changeFolder(text.getValue());
+      await this.plugin.library.changeFolder(requested);
       await this.plugin.saveSettings();
       text.setValue(this.plugin.settings.folder);
     } catch (error) {
