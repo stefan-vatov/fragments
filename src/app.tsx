@@ -362,7 +362,6 @@ function HighlightedEditor({
         spellCheck={false}
         value={body}
         readOnly={readOnly}
-        aria-busy={readOnly}
         onChange={(event) => onChange(event.target.value)}
         onScroll={(event) => {
           if (pre.current) {
