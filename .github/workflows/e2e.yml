@@ -1,0 +1,79 @@
+name: E2E
+
+# The headless CDP flow needs the Obsidian desktop runtime, so it runs nightly
+# and on demand instead of on every push; docs/local-testing.md documents the
+# same recipe for a local session.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
+
+jobs:
+  rename-headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      FRAGMENTS_TEST_ROOT: /tmp/fragments-rename.ci
+      FRAGMENTS_CDP_PORT: "9222"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install a headless display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libfuse2
+
+      - name: Fetch the Obsidian desktop runtime
+        run: |
+          url=$(curl -fsSL https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest \
+            | python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].endswith(".AppImage")))')
+          curl -fsSL -o /tmp/obsidian.AppImage "$url"
+          chmod +x /tmp/obsidian.AppImage
+          cd /tmp && ./obsidian.AppImage --appimage-extract >/dev/null
+
+      - name: Build and prepare the isolated fixture
+        run: |
+          mkdir -p "$FRAGMENTS_TEST_ROOT"
+          FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build
+          node scripts/prepare-e2e-fixture.mjs
+
+      - name: Launch headless Obsidian
+        run: |
+          Xvfb :99 -screen 0 1280x800x24 &
+          nohup env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY DISPLAY=:99 \
+            /tmp/squashfs-root/obsidian --ozone-platform=headless --disable-gpu --no-first-run \
+            --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
+            > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:$FRAGMENTS_CDP_PORT/json/list" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat "$FRAGMENTS_TEST_ROOT/obsidian.log"
+          exit 1
+
+      - name: Run the rename flow
+        run: node scripts/test-rename-headless.mjs
+
+      - name: Upload the session log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-obsidian-log
+          path: /tmp/fragments-rename.ci/obsidian.log
+          if-no-files-found: ignore
