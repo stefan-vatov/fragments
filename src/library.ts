@@ -158,7 +158,11 @@ export class FragmentLibrary {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.bodyIndex.delete(key);
       this.written.delete(key);
-      this.reads.delete(key);
+      // Keep the counter monotonic instead of deleting it: a read that started
+      // before this removal must never match the sequence of a later read that
+      // reuses the same path, or the deleted file's body would be applied to
+      // the re-created one.
+      this.reads.set(key, (this.reads.get(key) ?? 0) + 1);
       changed = this.fragments.delete(key) || changed;
     }
     if (changed) this.emit();
