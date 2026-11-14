@@ -6,7 +6,16 @@
     "obsidian",
     "obsidian-plugin"
   ],
+  "homepage": "https://github.com/stefan-vatov/fragments#readme",
+  "bugs": {
+    "url": "https://github.com/stefan-vatov/fragments/issues"
+  },
   "license": "MIT",
+  "author": "Stefan Vatov (TheThracian)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stefan-vatov/fragments.git"
+  },
   "type": "commonjs",
   "main": "main.js",
   "scripts": {
