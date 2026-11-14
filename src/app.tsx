@@ -509,39 +509,82 @@ function VirtualList({
     <div
       className="fragments-results"
       ref={viewport}
+      role="listbox"
+      aria-label="Fragments"
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
       <div style={{ height: items.length * rowHeight, position: "relative" }}>
-        {items.slice(start, end).map((item, index) => (
-          <button
-            key={item.path}
-            className={`fragments-result ${selected === item.path ? "is-selected" : ""}`}
-            aria-current={selected === item.path ? "true" : undefined}
-            style={{ top: (start + index) * rowHeight }}
-            onClick={() => select(item.path)}
-          >
-            <span className="fragments-result-title">
-              <span className="fragments-result-name">{item.title}</span>
-              {item.starred && <Star size={12} fill="currentColor" />}
-            </span>
-            <span className="fragments-result-preview">
-              {item.preview || (indexing(item.path) ? "Indexing…" : "No content yet")}
-            </span>
-            <span className="fragments-result-meta">
-              <span>
-                {item.tags.slice(0, 2).map((tag) => (
-                  <small key={tag}>#{tag}</small>
-                ))}
+        {items.slice(start, end).map((item, index) => {
+          const position = start + index;
+          const move = (event: React.KeyboardEvent<HTMLButtonElement>): void => {
+            const target =
+              event.key === "ArrowDown"
+                ? position + 1
+                : event.key === "ArrowUp"
+                  ? position - 1
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? items.length - 1
+                      : -1;
+            if (target < 0 || target >= items.length || target === position) return;
+            event.preventDefault();
+            const next = items[target];
+            if (!next) return;
+            // Keep the row inside the rendered window before focusing it.
+            if (target * rowHeight < scrollTop || (target + 1) * rowHeight > scrollTop + height) {
+              const nextScroll = Math.max(
+                0,
+                Math.min(target * rowHeight, items.length * rowHeight - height),
+              );
+              setScrollTop(nextScroll);
+              if (viewport.current) viewport.current.scrollTop = nextScroll;
+            }
+            select(next.path);
+            window.requestAnimationFrame(() => {
+              const node = viewport.current?.querySelector<HTMLButtonElement>(
+                `[data-path="${CSS.escape(next.path)}"]`,
+              );
+              node?.scrollIntoView({ block: "nearest" });
+              node?.focus();
+            });
+          };
+          return (
+            <button
+              key={item.path}
+              data-path={item.path}
+              role="option"
+              aria-selected={selected === item.path}
+              className={`fragments-result ${selected === item.path ? "is-selected" : ""}`}
+              aria-current={selected === item.path ? "true" : undefined}
+              tabIndex={selected === item.path || (!selected && position === 0) ? 0 : -1}
+              style={{ top: position * rowHeight }}
+              onClick={() => select(item.path)}
+              onKeyDown={move}
+            >
+              <span className="fragments-result-title">
+                <span className="fragments-result-name">{item.title}</span>
+                {item.starred && <Star size={12} fill="currentColor" />}
               </span>
-              <time
-                dateTime={new Date(item.modified).toISOString()}
-                title={new Date(item.modified).toLocaleString()}
-              >
-                {age(item.modified)}
-              </time>
-            </span>
-          </button>
-        ))}
+              <span className="fragments-result-preview">
+                {item.preview || (indexing(item.path) ? "Indexing…" : "No content yet")}
+              </span>
+              <span className="fragments-result-meta">
+                <span>
+                  {item.tags.slice(0, 2).map((tag) => (
+                    <small key={tag}>#{tag}</small>
+                  ))}
+                </span>
+                <time
+                  dateTime={new Date(item.modified).toISOString()}
+                  title={new Date(item.modified).toLocaleString()}
+                >
+                  {age(item.modified)}
+                </time>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

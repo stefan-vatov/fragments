@@ -56,7 +56,8 @@ describe("global search listbox", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
-    const listbox = viewEl.querySelector('[role="listbox"]');
+    // The fragment list is a listbox too; scope to the global search's own.
+    const listbox = viewEl.querySelector('#fragments-global-results[role="listbox"]');
     expect(listbox).not.toBeNull();
     expect(listbox?.getAttribute("aria-label") ?? "").not.toBe("");
     const options = [...(listbox?.querySelectorAll('[role="option"]') ?? [])];
