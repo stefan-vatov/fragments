@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import type FragmentsPlugin from "./main";
 import type { FragmentsView } from "./view";
+import { TitleWriteError } from "./library";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
@@ -561,6 +562,13 @@ function useFragmentMutations({
       return true;
     } catch (error) {
       errorNotice(error as Error);
+      // A failed title write still leaves the file at its new path; keep the
+      // editor on it instead of clearing the selection and jumping elsewhere.
+      if (error instanceof TitleWriteError) {
+        const nextPath = error.nextPath;
+        setSelected((current) => (current === source ? nextPath : current));
+        return false;
+      }
       setSelected((current) =>
         current === source && !library.entries().some((item) => item.path === source)
           ? null
@@ -582,6 +590,11 @@ function useFragmentMutations({
       });
     } catch (error) {
       errorNotice(error as Error);
+      if (error instanceof TitleWriteError) {
+        const nextPath = error.nextPath;
+        setSelected((current) => (current === source ? nextPath : current));
+        return;
+      }
       setSelected((current) =>
         current === source && !library.entries().some((item) => item.path === source)
           ? null

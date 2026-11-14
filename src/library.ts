@@ -17,6 +17,16 @@ export interface LibrarySettings {
   folder: string;
 }
 
+/** A rename/move moved the file but could not persist its new title. */
+export class TitleWriteError extends Error {
+  readonly nextPath: string;
+  constructor(message: string, nextPath: string) {
+    super(message);
+    this.name = "TitleWriteError";
+    this.nextPath = nextPath;
+  }
+}
+
 const SCRATCHPAD_NAME = "_fragments-scratchpad.md";
 
 const cleanFolder = (folder: string): string =>
@@ -355,9 +365,11 @@ export class FragmentLibrary {
       );
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`The note was renamed, but its title was not saved: ${reason}`, {
-        cause: error,
-      });
+      // The file already moved; report where it lives so the UI can follow it.
+      throw new TitleWriteError(
+        `The note was renamed, but its title was not saved: ${reason}`,
+        file.path,
+      );
     }
     await this.refresh(file);
     return file.path;
@@ -390,9 +402,10 @@ export class FragmentLibrary {
         );
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`The note was moved, but its title was not saved: ${reason}`, {
-          cause: error,
-        });
+        throw new TitleWriteError(
+          `The note was moved, but its title was not saved: ${reason}`,
+          file.path,
+        );
       }
       await this.refresh(file);
     }
