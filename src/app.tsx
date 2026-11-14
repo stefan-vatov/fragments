@@ -88,6 +88,11 @@ const useNow = (interval = 60_000): number => {
   return now;
 };
 
+// The view can live in a popout window: clipboard access and confirmation
+// belong to that window, not to the main one behind it.
+const windowOf = (view: FragmentsView): Window =>
+  view.containerEl.ownerDocument.defaultView ?? window;
+
 const errorNotice = (error: Error): void => {
   new Notice(error.message);
 };
@@ -479,6 +484,7 @@ interface FragmentMutations {
   save: (notify?: boolean) => Promise<void>;
   setSelected: Dispatch<SetStateAction<string | null>>;
   transitioning: FragmentTransitions;
+  view: FragmentsView;
 }
 
 function useFragmentMutations({
@@ -488,6 +494,7 @@ function useFragmentMutations({
   save,
   setSelected,
   transitioning,
+  view,
 }: FragmentMutations) {
   const mutations = useRef<Promise<void>>(Promise.resolve());
   const captureFile = (path: string): TFile => {
@@ -626,7 +633,7 @@ function useFragmentMutations({
     }
   };
   const trash = async (): Promise<void> => {
-    if (!selectedItem || !window.confirm(`Move “${selectedItem.title}” to trash?`)) return;
+    if (!selectedItem || !windowOf(view).confirm(`Move “${selectedItem.title}” to trash?`)) return;
     const source = selectedItem.path;
     try {
       const file = captureFile(source);
@@ -687,6 +694,7 @@ function useController({ plugin, view, handle }: Props) {
     save,
     setSelected,
     transitioning: transitioning.current,
+    view,
   });
   const tags = useMemo(() => countTags(entries), [entries]);
   const searchIndex = useMemo(() => indexFragments(entries), [entries]);
@@ -779,7 +787,7 @@ function useController({ plugin, view, handle }: Props) {
     // Nothing has loaded yet: writing now would replace the clipboard with "".
     if (!draftReady) return;
     try {
-      await navigator.clipboard.writeText(draft);
+      await windowOf(view).navigator.clipboard.writeText(draft);
       new Notice("Copied fragment");
     } catch (error) {
       errorNotice(error as Error);
