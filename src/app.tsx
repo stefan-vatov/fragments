@@ -733,6 +733,8 @@ function useController({ plugin, view, handle }: Props) {
     choose(path);
   };
   const copy = async (): Promise<void> => {
+    // Nothing has loaded yet: writing now would replace the clipboard with "".
+    if (!draftReady) return;
     try {
       await navigator.clipboard.writeText(draft);
       new Notice("Copied fragment");
@@ -1390,6 +1392,7 @@ function EditorToolbar({
     selectedItem,
     creationRevision,
     creating,
+    draftReady,
     setMobilePane,
     rename,
     toggleStar,
@@ -1477,6 +1480,7 @@ function EditorToolbar({
             className="fragments-primary fragments-copy"
             aria-label="Copy fragment"
             title="Copy fragment"
+            disabled={!draftReady}
             onClick={() => void copy()}
           >
             <Copy size={16} />
