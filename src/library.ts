@@ -157,6 +157,7 @@ export class FragmentLibrary {
   private folderExistsCache: { revision: number; exists: boolean } | null = null;
   private readonly reads = new Map<string, number>();
   private readonly relocations = new Map<string, string>();
+  private readonly retryTimers = new Set<string>();
 
   constructor(
     private readonly app: App,
@@ -616,7 +617,15 @@ export class FragmentLibrary {
       item.searchText =
         `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
     } catch {
-      // A file may disappear while the background index is reading it.
+      // A file may disappear while the background index is reading it, or a
+      // transient failure leaves the preview empty; retry once so the fragment
+      // does not stay unfindable by its content.
+      if (this.retryTimers.has(path)) return;
+      this.retryTimers.add(path);
+      window.setTimeout(() => {
+        this.retryTimers.delete(path);
+        void this.indexBody(file);
+      }, 1_000);
     }
   }
 
