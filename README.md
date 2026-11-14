@@ -35,3 +35,7 @@ every save; run `FRAGMENTS_BUILD_OUTFILE=main.js pnpm run dev` to hot-reload the
 Automated Obsidian tests run headlessly with a disposable vault and profile, without opening desktop windows. Build into that session with `FRAGMENTS_BUILD_OUTFILE` so testing cannot hot-reload a plugin linked into your normal vault. For the setup and checks, follow [the local testing guide](docs/local-testing.md).
 
 No note content leaves the vault. Fragments has no telemetry or network calls.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
