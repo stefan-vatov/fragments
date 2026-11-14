@@ -150,6 +150,7 @@ export class FragmentLibrary {
   private readonly written = new Map<string, string>();
   private collectionsCache: { revision: number; names: string[] } | null = null;
   private readonly reads = new Map<string, number>();
+  private readonly relocations = new Map<string, string>();
 
   constructor(
     private readonly app: App,
@@ -168,6 +169,12 @@ export class FragmentLibrary {
   // The body the index most recently read for a path, so callers can tell
   // whether a change they are reacting to is one they already hold.
   indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);
+  // An external rename moves the file; in-flight drafts and mutations addressed
+  // to the old path must land on the file that now exists.
+  relocate = (from: string, to: string): void => {
+    this.relocations.set(from, to);
+  };
+  relocation = (path: string): string | undefined => this.relocations.get(path);
   contains = (path: string): boolean => {
     const folder = this.folder();
     return (
@@ -550,7 +557,7 @@ export class FragmentLibrary {
   }
 
   private file(path: string): TFile {
-    const file = this.app.vault.getAbstractFileByPath(path);
+    const file = this.app.vault.getAbstractFileByPath(this.relocations.get(path) ?? path);
     if (!(file instanceof TFile) || !this.contains(file.path))
       throw new Error("Fragment is no longer available.");
     return file;

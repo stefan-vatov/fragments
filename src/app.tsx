@@ -733,6 +733,12 @@ function useController({ plugin, view, handle }: Props) {
     const filterChanged = previousFilter.current !== filterKey;
     previousFilter.current = filterKey;
     if (selected && filtered.some((item) => item.path === selected)) return;
+    // An external rename moves the file; keep the editor on it.
+    const moved = selected ? library.relocation(selected) : undefined;
+    if (moved && filtered.some((item) => item.path === moved)) {
+      setSelected(moved);
+      return;
+    }
     // Entries also change when the user acts on the open fragment (star, tag,
     // body edit). Keep the editor on a fragment that still exists instead of
     // diverting the next keystrokes into a different note; only a filter change
@@ -744,7 +750,7 @@ function useController({ plugin, view, handle }: Props) {
     )
       return;
     setSelected(filtered[0]?.path ?? null);
-  }, [selected, entries, filtered, filterKey, creating]);
+  }, [selected, entries, filtered, filterKey, creating, library]);
 
   const createFragment = useCallback(async () => {
     if (creationPending.current) return;

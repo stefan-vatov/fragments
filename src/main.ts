@@ -79,7 +79,12 @@ export default class FragmentsPlugin extends Plugin {
         // so evict the whole old subtree and rebuild under the new path.
         this.library.remove(oldPath);
         if (file instanceof TFile) {
-          void this.library.refresh(file);
+          // The open draft still writes to the old path: point it at the new
+          // file and persist before the list rebuild moves the selection away.
+          this.library.relocate(oldPath, file.path);
+          void this.flushDrafts()
+            .catch(() => undefined)
+            .then(() => this.library.refresh(file));
           return;
         }
         if (!(file instanceof TFolder)) return;
