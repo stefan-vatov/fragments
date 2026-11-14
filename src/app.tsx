@@ -1134,6 +1134,7 @@ function ListPane() {
     selected,
     choose,
     createFragment,
+    selectScope,
   } = useAppContext();
   // The active filter must stay reachable even when its tag ranks below the top
   // five, otherwise the row looks unfiltered while the list is filtered.
@@ -1143,6 +1144,8 @@ function ListPane() {
     if (activeTag) visibleTags.push(activeTag);
   }
   const listIdentity = JSON.stringify([scope, tagFilter, query, sort]);
+  // An empty result under an active filter is not an empty library.
+  const filtering = Boolean(query.trim() || tagFilter || scope.kind !== "all");
   return (
     <>
       <section
@@ -1204,8 +1207,25 @@ function ListPane() {
           />
         ) : (
           <div className="fragments-empty">
-            No fragments found.
-            <button onClick={() => void createFragment()}>Create a fragment</button>
+            {filtering ? (
+              <>
+                <span>No matches for the current filters.</span>
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    setTagFilter("");
+                    selectScope({ kind: "all" });
+                  }}
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <>
+                <span>No fragments yet.</span>
+                <button onClick={() => void createFragment()}>Create a fragment</button>
+              </>
+            )}
           </div>
         )}
       </section>
