@@ -660,6 +660,16 @@ function useFragmentMutations({
   return { toggleStar, updateTags, rename, move, trash, waitForMutations };
 }
 
+// The palette's own result list: nothing else renders it, so it is only built
+// while the dialog is open.
+const paletteResults = (entries: Fragment[], query: string): Fragment[] =>
+  entries
+    .filter((item) =>
+      `${item.title} ${item.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()),
+    )
+    .sort((a, b) => b.modified - a.modified)
+    .slice(0, 8);
+
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
@@ -801,12 +811,7 @@ function useController({ plugin, view, handle }: Props) {
     }
   };
 
-  const paletteItems = entries
-    .filter((item) =>
-      `${item.title} ${item.tags.join(" ")}`.toLowerCase().includes(paletteQuery.toLowerCase()),
-    )
-    .sort((a, b) => b.modified - a.modified)
-    .slice(0, 8);
+  const paletteItems = dialog === "palette" ? paletteResults(entries, paletteQuery) : [];
   useEffect(() => {
     setPaletteIndex((current) => Math.min(current, Math.max(paletteItems.length - 1, 0)));
   }, [paletteItems.length]);
