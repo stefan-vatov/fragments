@@ -1435,6 +1435,13 @@ function EditorToolbar({
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") {
+                  // Cancel the edit: restore the committed title, then blur so the
+                  // field does not keep the abandoned text (rename() sees no change).
+                  event.currentTarget.value = selectedItem.title;
+                  event.currentTarget.blur();
+                  event.stopPropagation();
+                }
               }}
             />
             <small>{selectedItem.collection || "All Snippets"}</small>
