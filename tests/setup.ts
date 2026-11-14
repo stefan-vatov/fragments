@@ -7,3 +7,9 @@ if (!HTMLDialogElement.prototype.showModal) {
     this.removeAttribute("open");
   };
 }
+
+// jsdom has no layout engine, so scrollIntoView is missing; list and search code
+// calls it to keep the highlighted row visible.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView(): void {};
+}

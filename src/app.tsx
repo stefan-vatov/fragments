@@ -1253,12 +1253,23 @@ function GlobalSearch() {
 
   useEffect(() => {
     if (!open) return undefined;
+    const node = root.current;
     const closeOutside = (event: PointerEvent): void => {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+      if (event.target instanceof Node && !node?.contains(event.target)) setOpen(false);
+    };
+    // Leaving the field with the keyboard (Tab, programmatic focus) must close the
+    // listbox too; a pointerdown listener alone only covers mouse users.
+    const closeOnFocusOut = (event: FocusEvent): void => {
+      if (event.relatedTarget instanceof Node && node?.contains(event.relatedTarget)) return;
+      setOpen(false);
     };
     const doc = view.containerEl.ownerDocument;
     doc.addEventListener("pointerdown", closeOutside);
-    return () => doc.removeEventListener("pointerdown", closeOutside);
+    node?.addEventListener("focusout", closeOnFocusOut);
+    return () => {
+      doc.removeEventListener("pointerdown", closeOutside);
+      node?.removeEventListener("focusout", closeOnFocusOut);
+    };
   }, [open, view]);
 
   useEffect(() => {
