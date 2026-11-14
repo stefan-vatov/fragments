@@ -1122,6 +1122,13 @@ function useScratchpad(library: FragmentLibrary, path: string) {
       })
       .catch((error: Error) => {
         if (!active) return;
+        // The read failed (permission error, or the path resolves to a folder).
+        // Accept input anyway: an editor that looks editable but reverts every
+        // keystroke silently loses text, while a save attempt surfaces the real
+        // error and keeps the buffer on screen.
+        current.text = "";
+        current.saved = "";
+        current.ready = true;
         setStatus("error");
         errorNotice(error);
       });
