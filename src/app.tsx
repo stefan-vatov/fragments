@@ -712,6 +712,8 @@ function useController({ plugin, view, handle }: Props) {
       setPaletteQuery("");
       setPaletteIndex(0);
     }
+    // A previously abandoned name must not reappear when the dialog reopens.
+    if (dialog === "collection") setNewCollection("");
   }, [dialog]);
 
   const selectScope = (next: SearchScope): void => {
