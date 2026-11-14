@@ -32,12 +32,39 @@ const unquote = (value: string): string =>
     ? value.slice(1, -1)
     : value;
 
+// Split a flow sequence on commas that are not inside quotes.
+const splitItems = (inner: string): string[] => {
+  const items: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const character of inner) {
+    if (quote) {
+      current += character;
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      current += character;
+      continue;
+    }
+    if (character === ",") {
+      items.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += character;
+  }
+  if (current.trim()) items.push(current.trim());
+  return items.map(unquote);
+};
+
 const parseValue = (raw: string): unknown => {
   const value = raw.trim();
   if (value.startsWith("[") && value.endsWith("]")) {
     const inner = value.slice(1, -1).trim();
     if (!inner) return [];
-    return inner.split(",").map((item) => unquote(item.trim()));
+    return splitItems(inner);
   }
   if (value === "true") return true;
   if (value === "false") return false;
@@ -51,15 +78,37 @@ const parseFrontmatter = (text: string): FrontmatterRecord | null => {
   const match = FRONTMATTER.exec(text);
   if (!match) return null;
   const record: FrontmatterRecord = {};
-  for (const line of match[1].split(/\r?\n/)) {
+  const lines = match[1].split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    // A key with no inline value may open a block sequence (`- item` lines).
+    const block = /^([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (block) {
+      const items: string[] = [];
+      let next = index + 1;
+      while (next < lines.length && /^\s*-\s+/.test(lines[next])) {
+        items.push(unquote(lines[next].replace(/^\s*-\s+/, "").trim()));
+        next += 1;
+      }
+      if (items.length > 0) {
+        record[block[1]] = items;
+        index = next - 1;
+        continue;
+      }
+    }
     const entry = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
     if (entry) record[entry[1]] = parseValue(entry[2]);
   }
   return record;
 };
 
+const serializeItem = (item: unknown): string => {
+  const text = String(item);
+  return /[,"]/.test(text) ? JSON.stringify(text) : text;
+};
+
 const serializeValue = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map((item) => String(item)).join(", ")}]`;
+  if (Array.isArray(value)) return `[${value.map(serializeItem).join(", ")}]`;
   if (typeof value === "boolean" || typeof value === "number") return String(value);
   return JSON.stringify(String(value ?? ""));
 };
