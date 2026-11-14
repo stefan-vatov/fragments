@@ -24,6 +24,7 @@ interface SearchOptions {
   sort?: "recent" | "name";
   limit?: number;
   includeBody?: boolean;
+  now?: number;
 }
 
 export function indexFragments(fragments: Fragment[]): SearchEntry[] {
@@ -35,12 +36,12 @@ export function indexFragments(fragments: Fragment[]): SearchEntry[] {
   }));
 }
 
-function matchesScope(item: Fragment, scope: SearchScope | undefined): boolean {
+function matchesScope(item: Fragment, scope: SearchScope | undefined, now: number): boolean {
   switch (scope?.kind) {
     case "starred":
       return item.starred;
     case "recent":
-      return Date.now() - item.modified <= 30 * 86400000;
+      return now - item.modified <= 30 * 86400000;
     case "collection":
       return item.collection === scope.value || item.collection.startsWith(`${scope.value}/`);
     case "tag":
@@ -97,7 +98,15 @@ function compare(left: RankedFragment, right: RankedFragment, sort: "recent" | "
 }
 
 export function searchFragments(index: SearchEntry[], options: SearchOptions): Fragment[] {
-  const { query, scope, tagFilter, sort = "recent", limit, includeBody = false } = options;
+  const {
+    query,
+    scope,
+    tagFilter,
+    sort = "recent",
+    limit,
+    includeBody = false,
+    now = Date.now(),
+  } = options;
   const terms = query
     .toLowerCase()
     .split(/\s+/)
@@ -105,7 +114,7 @@ export function searchFragments(index: SearchEntry[], options: SearchOptions): F
     .filter(Boolean);
   const results: RankedFragment[] = [];
   for (const entry of index) {
-    if (!matchesScope(entry.fragment, scope)) continue;
+    if (!matchesScope(entry.fragment, scope, now)) continue;
     if (tagFilter && !entry.fragment.tags.includes(tagFilter)) continue;
     const score = entryScore(entry, terms, includeBody);
     if (score < 0) continue;

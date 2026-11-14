@@ -71,6 +71,23 @@ const age = (modified: number): string => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
+// A coarse clock for everything rendered from Date.now(): relative ages and the
+// Recent cutoff would otherwise freeze until an unrelated library event.
+const useNow = (interval = 60_000): number => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = (): void => setNow(Date.now());
+    const timer = setInterval(tick, interval);
+    // A window that slept for hours should not wait for the next minute tick.
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", tick);
+    };
+  }, [interval]);
+  return now;
+};
+
 const errorNotice = (error: Error): void => {
   new Notice(error.message);
 };
@@ -627,6 +644,7 @@ function useFragmentMutations({
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
+  const now = useNow();
   const entries = useMemo(() => library.entries(), [library, revision]);
   const [scope, setScope] = useState<SearchScope>({ kind: "all" });
   const [selected, setSelected] = useState<string | null>(null);
@@ -669,8 +687,8 @@ function useController({ plugin, view, handle }: Props) {
   const searchIndex = useMemo(() => indexFragments(entries), [entries]);
 
   const filtered = useMemo(
-    () => searchFragments(searchIndex, { scope, tagFilter, query, sort, includeBody: true }),
-    [searchIndex, scope, tagFilter, query, sort],
+    () => searchFragments(searchIndex, { scope, tagFilter, query, sort, includeBody: true, now }),
+    [searchIndex, scope, tagFilter, query, sort, now],
   );
 
   const filterKey = JSON.stringify([scope, tagFilter, query, sort]);
