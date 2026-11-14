@@ -207,6 +207,12 @@ export class FragmentLibrary {
   // The body the index most recently read for a path, so callers can tell
   // whether a change they are reacting to is one they already hold.
   indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);
+  // The raw file stamp lets callers tell the file a draft was written against
+  // from a different file re-created at the same path.
+  fileStamp = (path: string): number | undefined => {
+    const file = this.app.vault.getAbstractFileByPath(this.resolvePath(path));
+    return file instanceof TFile ? file.stat.mtime : undefined;
+  };
   // An external rename moves the file; in-flight drafts and mutations addressed
   // to the old path must land on the file that now exists. Existing entries are
   // rewritten so a chain (A->B->C) never leaves A pointing at a missing path.

@@ -168,8 +168,10 @@ function useDraft(
   const [readAttempt, setReadAttempt] = useState(0);
   const pendingDraft = useRef<PendingDraft | null>(null);
   // A draft whose save failed must survive the owner change that follows a
-  // switch; the path is its only stable identity.
-  const failedDrafts = useRef(new Map<string, { text: string; expected: string }>());
+  // switch; the path plus the file stamp identify the file it belongs to.
+  const failedDrafts = useRef(
+    new Map<string, { text: string; expected: string; stamp?: number }>(),
+  );
   const ready = buffer?.owner === owner;
   const body = ready ? buffer.body : "";
   // Readable from the effect below without re-subscribing on every keystroke.
@@ -199,16 +201,23 @@ function useDraft(
     // file, and let the autosave effect retry the write.
     const failed = failedDrafts.current.get(owner.path);
     if (failed) {
-      owner.edits += 1;
-      pendingDraft.current = {
-        owner,
-        path: owner.path,
-        text: failed.text,
-        expected: failed.expected,
-      };
-      setBuffer({ owner, body: failed.expected, draft: failed.text, dirty: true });
-      setReadFailed(false);
-      return undefined;
+      const stamp = library.fileStamp(owner.path);
+      if (failed.stamp !== undefined && stamp !== undefined && failed.stamp !== stamp) {
+        // The path now holds a different file (deleted and re-created): the old
+        // draft must not be offered as that fragment's content.
+        failedDrafts.current.delete(owner.path);
+      } else {
+        owner.edits += 1;
+        pendingDraft.current = {
+          owner,
+          path: owner.path,
+          text: failed.text,
+          expected: failed.expected,
+        };
+        setBuffer({ owner, body: failed.expected, draft: failed.text, dirty: true });
+        setReadFailed(false);
+        return undefined;
+      }
     }
     // The index pass already read the body we just wrote (or a star/tag edit
     // left it untouched); reading it back would only churn the buffer and
@@ -274,6 +283,7 @@ function useDraft(
             failedDrafts.current.set(writing.path, {
               text: writing.text,
               expected: writing.expected,
+              stamp: library.fileStamp(writing.path),
             });
             errorNotice(error);
           });
