@@ -1048,6 +1048,11 @@ function ListPane() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search in ${labelScope(scope)}…`}
             />
+            {query && (
+              <button type="button" aria-label="Clear search" onClick={() => setQuery("")}>
+                <X size={13} />
+              </button>
+            )}
           </div>
           <div className="fragments-filter-row">
             <button
