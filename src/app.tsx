@@ -356,6 +356,7 @@ function HighlightedEditor({
         <code ref={code} />
       </pre>
       <textarea
+        dir="auto"
         className="fragments-editor"
         aria-label="Fragment text"
         spellCheck={false}
@@ -412,6 +413,7 @@ function LanguageInput({
   }, [plugin.app, commit]);
   return (
     <input
+      dir="auto"
       ref={ref}
       aria-label="Language"
       title="Language"
@@ -1123,6 +1125,7 @@ function ListPane() {
           <div className="fragments-search">
             <Search size={15} />
             <input
+              dir="auto"
               aria-label="Search fragments"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -1332,6 +1335,7 @@ function Scratchpad({
         </span>
       </header>
       <textarea
+        dir="auto"
         className="fragments-scratchpad-editor"
         aria-label="Scratchpad text"
         spellCheck={false}
@@ -1426,6 +1430,7 @@ function GlobalSearch() {
     <div className="fragments-global-search" ref={root}>
       <Search size={15} aria-hidden="true" />
       <input
+        dir="auto"
         ref={input}
         role="combobox"
         aria-label="Search all fragments by title or tag"
@@ -1558,6 +1563,7 @@ function EditorToolbar({
         <>
           <div className="fragments-title-wrap">
             <input
+              dir="auto"
               ref={titleInput}
               key={`${creationRevision}:${selectedItem.path}:${selectedItem.title}`}
               aria-label="Fragment title"
@@ -1715,6 +1721,7 @@ function EditorPane() {
                     ))}
                     {editingTags ? (
                       <input
+                        dir="auto"
                         className="fragments-tag-input"
                         aria-label="Edit tags"
                         autoFocus
@@ -1841,6 +1848,7 @@ function Dialogs() {
               <div className="fragments-palette-search">
                 <Search size={19} />
                 <input
+                  dir="auto"
                   autoFocus
                   aria-label="Search commands and snippets"
                   value={paletteQuery}
@@ -1911,6 +1919,7 @@ function Dialogs() {
                 </button>
               </header>
               <input
+                dir="auto"
                 autoFocus
                 aria-label="Collection name"
                 value={newCollection}
