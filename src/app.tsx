@@ -1484,13 +1484,19 @@ function GlobalSearch() {
         </button>
       )}
       {open && query.trim() && (
-        <div className="fragments-global-results" id="fragments-global-results" role="listbox">
+        <div
+          className="fragments-global-results"
+          id="fragments-global-results"
+          role="listbox"
+          aria-label="Fragment search results"
+        >
           <div className="fragments-global-results-label">All fragments · titles and tags</div>
           {results.length ? (
             results.map((fragment, resultIndex) => (
               <button
                 id={`fragments-global-result-${resultIndex}`}
                 role="option"
+                tabIndex={-1}
                 aria-selected={resultIndex === active}
                 className={resultIndex === active ? "is-active" : ""}
                 key={fragment.path}
