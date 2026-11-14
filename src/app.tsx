@@ -1725,6 +1725,9 @@ function EditorPane() {
                         className="fragments-tag-input"
                         aria-label="Edit tags"
                         autoFocus
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         value={tagDraft}
                         onChange={(event) => setTagDraft(event.target.value)}
                         onBlur={finishTags}
@@ -1922,6 +1925,9 @@ function Dialogs() {
                 dir="auto"
                 autoFocus
                 aria-label="Collection name"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={newCollection}
                 onChange={(event) => setNewCollection(event.target.value)}
                 placeholder="Collection name"
