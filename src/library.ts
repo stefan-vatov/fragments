@@ -298,12 +298,13 @@ export class FragmentLibrary {
     const requested = title.trim();
     if (!requested) throw new Error("Enter a title.");
     const parent = file.parent?.path ?? this.folder();
-    const requestedPath = `${parent}/${requested.replace(/[\\/:*?"<>|]/g, "-")}.md`;
-    if (requestedPath === this.scratchpadPath())
-      throw new Error("That title is reserved for the scratchpad.");
     const unique = this.availableTitle(requested, path);
     const safe = unique.replace(/[\\/:*?"<>|]/g, "-");
     const next = this.availablePath(parent, safe, file);
+    // Check the final, de-duplicated path: an already-taken reserved title
+    // becomes "_fragments-scratchpad (1)" and cannot collide with the pad file.
+    if (next === this.scratchpadPath())
+      throw new Error("That title is reserved for the scratchpad.");
     if (next !== path) {
       await run(() => this.app.fileManager.renameFile(file, next));
       // The file has moved, so re-index it before touching the frontmatter: a
@@ -334,13 +335,14 @@ export class FragmentLibrary {
     const folder = collection ? `${this.folder()}/${collection}` : this.folder();
     await this.ensureFolder(folder);
     const requestedPath = `${folder}/${file.name}`;
-    if (requestedPath === this.scratchpadPath())
-      throw new Error("That filename is reserved for the scratchpad.");
     const occupied = this.app.vault.getAbstractFileByPath(requestedPath);
     const title = this.entries().find((entry) => entry.path === path)?.title ?? file.basename;
     const unique = occupied && occupied !== file ? this.availableTitle(title, path) : title;
     const base = unique === title ? file.basename : unique.replace(/[\\/:*?"<>|]/g, "-");
     const next = this.availablePath(folder, base, file);
+    // Only the final path matters: a name that gets suffixed is not the pad file.
+    if (next === this.scratchpadPath())
+      throw new Error("That filename is reserved for the scratchpad.");
     if (next === path) return path;
     await run(() => this.app.fileManager.renameFile(file, next));
     this.remove(path);
