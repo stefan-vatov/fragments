@@ -167,6 +167,9 @@ function useDraft(
   const [readFailed, setReadFailed] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
   const pendingDraft = useRef<PendingDraft | null>(null);
+  // A draft whose save failed must survive the owner change that follows a
+  // switch; the path is its only stable identity.
+  const failedDrafts = useRef(new Map<string, { text: string; expected: string }>());
   const ready = buffer?.owner === owner;
   const body = ready ? buffer.body : "";
   // Readable from the effect below without re-subscribing on every keystroke.
@@ -176,6 +179,7 @@ function useDraft(
   const dirty = ready && buffer.dirty;
 
   const saved = useCallback((writing: PendingDraft): void => {
+    failedDrafts.current.delete(writing.path);
     const latest = pendingDraft.current;
     if (latest === writing) pendingDraft.current = null;
     setBuffer((current) =>
@@ -191,6 +195,21 @@ function useDraft(
       return undefined;
     }
     if (pendingDraft.current?.owner === owner) return undefined;
+    // A failed save kept this path's text; restore it instead of re-reading the
+    // file, and let the autosave effect retry the write.
+    const failed = failedDrafts.current.get(owner.path);
+    if (failed) {
+      owner.edits += 1;
+      pendingDraft.current = {
+        owner,
+        path: owner.path,
+        text: failed.text,
+        expected: failed.expected,
+      };
+      setBuffer({ owner, body: failed.expected, draft: failed.text, dirty: true });
+      setReadFailed(false);
+      return undefined;
+    }
     // The index pass already read the body we just wrote (or a star/tag edit
     // left it untouched); reading it back would only churn the buffer and
     // re-render the preview for no visible change.
@@ -251,7 +270,13 @@ function useDraft(
         void library
           .saveBody(writing.path, writing.text, writing.expected)
           .then(() => saved(writing))
-          .catch(errorNotice);
+          .catch((error: Error) => {
+            failedDrafts.current.set(writing.path, {
+              text: writing.text,
+              expected: writing.expected,
+            });
+            errorNotice(error);
+          });
     },
     [owner, library, saved],
   );
