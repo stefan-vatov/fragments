@@ -379,6 +379,8 @@ function LanguageInput({
     (value: string) => {
       const choice = findLanguage(value);
       if (!choice) {
+        // A typo or an unsupported grammar must not look like the edit was ignored.
+        if (value.trim()) new Notice(`Unknown language: ${value.trim()}`);
         setText(languageLabel(item.language));
         return;
       }
