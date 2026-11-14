@@ -1250,3 +1250,16 @@
     min-height: 44px;
   }
 }
+
+/* Forced-colors modes can override the transparent fill and show the textarea's
+   text on top of the highlighted overlay; use the textarea alone there. */
+@media (forced-colors: active) {
+  .fragments-highlight-editor pre {
+    display: none;
+  }
+  .fragments-app textarea.fragments-editor {
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+    background: Canvas;
+  }
+}
