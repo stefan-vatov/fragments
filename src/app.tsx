@@ -139,6 +139,7 @@ function useDraft(
     [selected, creationRevision],
   );
   const [buffer, setBuffer] = useState<DraftBuffer | null>(null);
+  const [saveAttempt, setSaveAttempt] = useState(0);
   const pendingDraft = useRef<PendingDraft | null>(null);
   const ready = buffer?.owner === owner;
   const body = ready ? buffer.body : "";
@@ -179,16 +180,26 @@ function useDraft(
 
   useEffect(() => {
     if (!dirty) return undefined;
+    // First save after a pause; after a failure, retry with backoff so a transient
+    // error (sync lock, slow disk) does not strand the draft until the next keystroke.
+    const delay = saveAttempt === 0 ? 700 : Math.min(8_000, 500 * 2 ** (saveAttempt - 1));
     const timer = window.setTimeout(() => {
       const writing = pendingDraft.current;
       if (!writing || writing.owner !== owner || writing.text !== draft) return;
       void library
         .saveBody(writing.path, writing.text, writing.expected)
-        .then(() => saved(writing))
-        .catch(errorNotice);
-    }, 700);
+        .then(() => {
+          setSaveAttempt(0);
+          saved(writing);
+        })
+        .catch((error: Error) => {
+          errorNotice(error);
+          // Capped so a permanent conflict (external edit) does not loop forever.
+          setSaveAttempt((current) => (current < 5 ? current + 1 : current));
+        });
+    }, delay);
     return () => window.clearTimeout(timer);
-  }, [owner, draft, dirty, library, saved]);
+  }, [owner, draft, dirty, library, saved, saveAttempt]);
 
   useEffect(
     () => () => {
