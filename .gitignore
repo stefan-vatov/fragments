@@ -685,3 +685,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,windows,vim,emacs,visualstudiocode,node,elixir,rust-analyzer,rust,astro,ansible,bazel,latex,remix+cloudflareworkers
+
+# Local issue-tracker state (beads) is not part of the plugin.
+/.beads/
