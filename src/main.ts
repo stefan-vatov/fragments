@@ -167,7 +167,9 @@ export default class FragmentsPlugin extends Plugin {
     try {
       const workspace = this.app.workspace;
       const leaves = workspace.getLeavesOfType(FRAGMENTS_VIEW);
-      const leaf = this.prepareLeaf(leaves);
+      // A restored workspace keeps the leaf where the user docked it; only an
+      // explicit open moves it into the app window.
+      const leaf = this.prepareLeaf(leaves, !reveal);
       if (!(leaf.view instanceof FragmentsView))
         await leaf.setViewState({ type: FRAGMENTS_VIEW, active: reveal });
       if (reveal) await workspace.revealLeaf(leaf);
@@ -179,14 +181,14 @@ export default class FragmentsPlugin extends Plugin {
     }
   }
 
-  private prepareLeaf(leaves: WorkspaceLeaf[]): WorkspaceLeaf {
+  private prepareLeaf(leaves: WorkspaceLeaf[], keepDock = false): WorkspaceLeaf {
     const workspace = this.app.workspace;
     const leaf =
       this.findWindowLeaf() ??
       leaves.find((item) => item.getContainer() !== workspace.rootSplit) ??
       leaves[0] ??
       workspace.getLeaf(Platform.isDesktopApp ? "window" : "tab");
-    if (Platform.isDesktopApp && leaf.getContainer() === workspace.rootSplit)
+    if (Platform.isDesktopApp && !keepDock && leaf.getContainer() === workspace.rootSplit)
       workspace.moveLeafToPopout(leaf);
     if (Platform.isDesktopApp && leaf.getContainer() !== workspace.rootSplit) {
       leaf.getContainer().doc.documentElement.setAttribute(WINDOW_MARKER, "true");

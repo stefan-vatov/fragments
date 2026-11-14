@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import FragmentsPlugin from "../src/main";
 import { FRAGMENTS_VIEW, FragmentsView } from "../src/view";
-import { notices } from "./obsidian-stub";
+import { notices, Platform } from "./obsidian-stub";
 import { createTestVault } from "./vault";
 
 const tick = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +33,7 @@ const setup = (options: { leaves?: FakeLeaf[]; failOnLeaves?: boolean } = {}) =>
       return leaves;
     }),
     getLeaf: vi.fn(() => created),
+    moveLeafToPopout: vi.fn(),
     revealLeaf: vi.fn(async () => undefined),
     detachLeavesOfType: vi.fn(),
     onLayoutReady: (callback: () => void) => {
@@ -71,6 +72,7 @@ const setup = (options: { leaves?: FakeLeaf[]; failOnLeaves?: boolean } = {}) =>
     protocols,
     created,
     settle,
+    rootSplit,
     setLeaves: (next: FakeLeaf[]) => {
       leaves = next;
     },
@@ -114,6 +116,38 @@ describe("plugin lifecycle", () => {
     await tick();
     expect(workspace.revealLeaf).not.toHaveBeenCalled();
     expect(leaf.setViewState).not.toHaveBeenCalled();
+  });
+
+  it("keeps a restored main-window leaf docked", async () => {
+    (Platform as { isDesktopApp?: boolean }).isDesktopApp = true;
+    try {
+      const { plugin, workspace, setLeaves, settle, rootSplit } = setup();
+      const leaf = makeLeaf(rootSplit);
+      leaf.view = new FragmentsView(leaf as never, plugin);
+      setLeaves([leaf]);
+      await plugin.onload();
+      settle();
+      await tick();
+      expect(workspace.moveLeafToPopout).not.toHaveBeenCalled();
+    } finally {
+      (Platform as { isDesktopApp?: boolean }).isDesktopApp = false;
+    }
+  });
+
+  it("pops a main-window leaf out when opened explicitly", async () => {
+    (Platform as { isDesktopApp?: boolean }).isDesktopApp = true;
+    try {
+      const { plugin, workspace, setLeaves, commands, rootSplit } = setup();
+      const leaf = makeLeaf(rootSplit);
+      leaf.view = new FragmentsView(leaf as never, plugin);
+      setLeaves([leaf]);
+      await plugin.onload();
+      commands.open();
+      await tick();
+      expect(workspace.moveLeafToPopout).toHaveBeenCalledWith(leaf);
+    } finally {
+      (Platform as { isDesktopApp?: boolean }).isDesktopApp = false;
+    }
   });
 
   it("forwards the new-fragment and search commands to the view", async () => {
