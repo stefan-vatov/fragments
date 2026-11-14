@@ -1616,7 +1616,7 @@ function EditorToolbar({
                 }
               }}
             />
-            <small>{selectedItem.collection || "All Snippets"}</small>
+            <small title={selectedItem.path}>{selectedItem.collection || "All Snippets"}</small>
           </div>
           <GlobalSearch />
           <button
