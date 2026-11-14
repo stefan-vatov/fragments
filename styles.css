@@ -1238,3 +1238,15 @@
   border-top: 1px solid var(--frag-line);
   border-left: 0;
 }
+
+/* Touch input needs comfortable hit areas; the desktop sizes below 44 px are
+   fine for a mouse. */
+@media (pointer: coarse) {
+  .fragments-app button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .fragments-app .fragments-result {
+    min-height: 44px;
+  }
+}
