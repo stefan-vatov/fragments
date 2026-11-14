@@ -1016,9 +1016,31 @@ function useAppContext(): Controller {
   return context;
 }
 
+// Below 800px only the active pane is displayed; the pane that held focus is
+// hidden, so focus would fall to the document body.
+function usePaneFocus(pane: "nav" | "list" | "editor", view: FragmentsView): void {
+  const previous = useRef(pane);
+  useEffect(() => {
+    if (previous.current === pane) return;
+    previous.current = pane;
+    const media = (window as Window & { matchMedia?: (query: string) => MediaQueryList })
+      .matchMedia;
+    if (!media || !media("(max-width: 800px)").matches) return;
+    const element =
+      pane === "list"
+        ? (view.containerEl.querySelector<HTMLElement>(".fragments-result.is-selected") ??
+          view.containerEl.querySelector<HTMLElement>('input[aria-label="Search fragments"]'))
+        : view.containerEl.querySelector<HTMLElement>(
+            pane === "nav" ? ".fragments-navigation button" : 'input[aria-label="Fragment title"]',
+          );
+    element?.focus();
+  }, [pane, view]);
+}
+
 export function AppShell(props: Props) {
   useSyncExternalStore(props.plugin.subscribeSettings, props.plugin.settingsSnapshot);
   const controller = useController(props);
+  usePaneFocus(controller.mobilePane, props.view);
   const style = {
     "--frag-snippet-font": snippetFontFamily(controller.plugin.settings),
   } as CSSProperties;
