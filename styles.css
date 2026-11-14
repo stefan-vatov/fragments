@@ -953,7 +953,8 @@
   outline: 0;
   background: none;
   color: #eee;
-  font-size: 15px;
+  /* 16px keeps mobile browsers from zooming the field on focus. */
+  font-size: 16px;
 }
 .fragments-palette > p {
   margin: 16px 18px 8px;
@@ -1137,7 +1138,7 @@
     padding: 5px;
   }
   .fragments-title-wrap input {
-    font-size: 15px;
+    font-size: 16px;
   }
   .fragments-highlight-editor pre,
   .fragments-app textarea.fragments-editor,
