@@ -185,6 +185,11 @@ export class FragmentLibrary {
   // before the first write creates it.
   hasScratchpad = (): boolean =>
     this.app.vault.getAbstractFileByPath(this.scratchpadPath()) instanceof TFile;
+  // An external change to the pad file must re-render the open session; the
+  // fragment index is unaffected.
+  scratchpadChanged = (): void => {
+    this.emit();
+  };
   // The body the index most recently read for a path, so callers can tell
   // whether a change they are reacting to is one they already hold.
   indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);

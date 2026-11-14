@@ -78,6 +78,8 @@ export default class FragmentsPlugin extends Plugin {
         this.library.remove(file.path);
         // An empty folder evicts no fragment, so the sidebar needs its own signal.
         if (file instanceof TFolder) this.library.folderTreeChanged();
+        else if (file.path.toLowerCase() === this.library.scratchpadPath().toLowerCase())
+          this.library.scratchpadChanged();
       }),
     );
     this.registerEvent(

@@ -1255,6 +1255,9 @@ function useScratchpad(library: FragmentLibrary, path: string) {
           // A conflicted session stays conflicted until the pad is reopened:
           // adopting the file's text as a baseline here would let the next
           // keystroke silently overwrite the external edit.
+          // The pad file can be deleted externally; adopt that so the next write
+          // recreates it instead of failing the expected-content guard.
+          if (!library.hasScratchpad()) current.saved = "";
           if (next === current.saved) {
             if (session.current === current) setStatus("saved");
             return;
@@ -1333,9 +1336,13 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     if (session.current) flush(session.current);
   };
 
+  // The file can disappear while the pad is open (external delete); "saved" must
+  // not outlive it.
+  const shownStatus: ScratchpadStatus =
+    status === "saved" && !library.hasScratchpad() ? "empty" : status;
   return {
     text: session.current?.path === path ? text : "",
-    status: session.current?.path === path ? status : "loading",
+    status: session.current?.path === path ? shownStatus : "loading",
     editScratchpad,
     saveScratchpad,
   };
