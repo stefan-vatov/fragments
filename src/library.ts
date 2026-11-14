@@ -62,7 +62,7 @@ const decodeBooleanText = Schema.decodeUnknownOption(
 );
 const decodeBooleanNumber = Schema.decodeUnknownOption(Schema.Literal(1, 0));
 const decodeTags = Schema.decodeUnknownOption(
-  Schema.Union(Schema.Array(Schema.String), Schema.String),
+  Schema.Union(Schema.Array(Schema.Unknown), Schema.String),
 );
 
 // Windows refuses these device names even with an extension.
@@ -109,10 +109,14 @@ interface ParsedMetadata {
 }
 
 function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
-  const tagValue = Option.getOrElse(decodeTags(raw?.tags), () => [] as string[]);
+  const tagValue = Option.getOrElse(decodeTags(raw?.tags), () => [] as unknown[]);
   // Split scalar tags on commas only: the write path joins tags with commas, so
-  // whitespace must stay inside a tag for the round-trip to be lossless.
-  const values = Schema.is(Schema.String)(tagValue) ? tagValue.split(",") : tagValue;
+  // whitespace must stay inside a tag for the round-trip to be lossless. An
+  // array is decoded element-wise: one malformed member (an unquoted year, a
+  // nested list) must not discard the valid tags around it.
+  const values: string[] = Schema.is(Schema.String)(tagValue)
+    ? tagValue.split(",")
+    : [...tagValue].filter((tag): tag is string => Schema.is(Schema.String)(tag));
   const title = Option.getOrUndefined(decodeString(raw?.title));
   // Tools that write frontmatter do not all agree on booleans: Obsidian's parser
   // yields a string for `starred: "true"` and for YAML-1.1 spellings like `yes`.
