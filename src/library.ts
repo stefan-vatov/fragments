@@ -148,6 +148,7 @@ export class FragmentLibrary {
   private generation = 0;
   private readonly pending = new Map<string, Promise<void>>();
   private readonly written = new Map<string, string>();
+  private collectionsCache: { revision: number; names: string[] } | null = null;
   private readonly reads = new Map<string, number>();
 
   constructor(
@@ -216,6 +217,7 @@ export class FragmentLibrary {
   remove(path: string): void {
     // Obsidian emits one event for a renamed or deleted folder, not one per
     // descendant file, so evict every indexed path at or below it.
+    this.collectionsCache = null;
     let changed = false;
     for (const key of this.fragments.keys()) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
@@ -438,6 +440,9 @@ export class FragmentLibrary {
   }
 
   collections(): string[] {
+    // The sidebar and the collection <select> both render this list; the folder
+    // tree changes far less often than the editor re-renders.
+    if (this.collectionsCache?.revision === this.revision) return this.collectionsCache.names;
     const root = this.app.vault.getAbstractFileByPath(this.folder());
     if (!(root instanceof TFolder)) return [];
     const result: string[] = [];
@@ -451,7 +456,9 @@ export class FragmentLibrary {
       }
     };
     visit(root, "");
-    return result.sort((a, b) => a.localeCompare(b));
+    result.sort((a, b) => a.localeCompare(b));
+    this.collectionsCache = { revision: this.revision, names: result };
+    return result;
   }
 
   async changeFolder(folder: string): Promise<void> {
@@ -553,8 +560,10 @@ export class FragmentLibrary {
     const parts = path.split("/");
     for (let count = 1; count <= parts.length; count++) {
       const part = parts.slice(0, count).join("/");
-      if (!this.app.vault.getAbstractFileByPath(part))
+      if (!this.app.vault.getAbstractFileByPath(part)) {
         await run(() => this.app.vault.createFolder(part));
+        this.collectionsCache = null;
+      }
     }
   }
 
