@@ -462,6 +462,13 @@ export class FragmentLibrary {
     this.emit();
   }
 
+  // Folder-only changes (an empty collection appearing or disappearing) touch no
+  // fragment, so the collections cache must be dropped and listeners told.
+  folderTreeChanged = (): void => {
+    this.collectionsCache = null;
+    this.emit();
+  };
+
   collections(): string[] {
     // The sidebar and the collection <select> both render this list; the folder
     // tree changes far less often than the editor re-renders.

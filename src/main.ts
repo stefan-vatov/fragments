@@ -65,6 +65,7 @@ export default class FragmentsPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (file instanceof TFile) void this.library.refresh(file);
+        else if (file instanceof TFolder) this.library.folderTreeChanged();
       }),
     );
     this.registerEvent(
@@ -72,7 +73,13 @@ export default class FragmentsPlugin extends Plugin {
         if (file instanceof TFile) void this.library.refresh(file);
       }),
     );
-    this.registerEvent(this.app.vault.on("delete", (file) => this.library.remove(file.path)));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        this.library.remove(file.path);
+        // An empty folder evicts no fragment, so the sidebar needs its own signal.
+        if (file instanceof TFolder) this.library.folderTreeChanged();
+      }),
+    );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
         // A folder rename arrives as one event with no per-descendant events,
