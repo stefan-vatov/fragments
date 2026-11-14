@@ -351,11 +351,15 @@ export class FragmentLibrary {
   async createCollection(name: string): Promise<void> {
     // create() and move() treat a collection as a real nested path, so the
     // dialog must too: sanitise each segment instead of flattening "/" to "-".
-    const path = name
+    const segments = name
       .split("/")
       .map((segment) => segment.trim().replace(/[\\:*?"<>|]/g, "-"))
-      .filter(Boolean)
-      .join("/");
+      .filter(Boolean);
+    // A "." or ".." segment escapes the library root once it reaches the vault
+    // API, so reject it instead of creating a traversal path.
+    if (segments.some((segment) => segment === "." || segment === ".."))
+      throw new Error("Collection names cannot contain “.” or “..” segments.");
+    const path = segments.join("/");
     if (!path) throw new Error("Enter a collection name.");
     await this.ensureFolder(`${this.folder()}/${path}`);
     this.emit();
