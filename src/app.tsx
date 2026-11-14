@@ -1476,7 +1476,7 @@ function GlobalSearch() {
             input.current?.blur();
           }
         }}
-        placeholder="Search all fragments…"
+        placeholder="Search titles and tags…"
       />
       {query && (
         <button
