@@ -386,6 +386,9 @@ export class FragmentLibrary {
     const requested = cleanFolder(folder) || "Fragments";
     const existing = this.existingFolder(requested);
     if (!existing) throw new Error(`The folder “${requested}” does not exist in this vault.`);
+    // Re-entering the folder that is already active (same path, different case or
+    // trailing whitespace) must not clear and re-read the whole library.
+    if (existing === this.settings.folder) return;
     this.settings.folder = existing;
     await this.load();
   }
