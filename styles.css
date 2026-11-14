@@ -145,6 +145,7 @@
 }
 .fragments-section-label {
   margin: 0;
+  font-weight: inherit;
   padding: 0 8px 8px;
   color: var(--frag-subtle);
   font-size: 11px;

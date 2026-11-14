@@ -1007,7 +1007,7 @@ function SidebarPane() {
           <Plus size={15} /> New Snippet
         </button>
         <nav className="fragments-navigation" aria-label="Fragments navigation">
-          <p className="fragments-section-label">Quick Access</p>
+          <h2 className="fragments-section-label">Quick Access</h2>
           <button
             className={scope.kind === "all" ? "active" : ""}
             aria-current={scope.kind === "all" ? "true" : undefined}
@@ -1033,7 +1033,7 @@ function SidebarPane() {
             <span>Recent</span>
           </button>
           <div className="fragments-section-heading">
-            <p className="fragments-section-label">Collections</p>
+            <h2 className="fragments-section-label">Collections</h2>
             <button
               title="New collection"
               aria-label="New collection"
@@ -1065,7 +1065,7 @@ function SidebarPane() {
             </button>
           ))}
           <div className="fragments-section-heading">
-            <p className="fragments-section-label">Tags</p>
+            <h2 className="fragments-section-label">Tags</h2>
           </div>
           {tags.map(([tag, count]) => (
             <button
