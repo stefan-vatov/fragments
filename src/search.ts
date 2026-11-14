@@ -73,6 +73,25 @@ function fieldScore(text: string, term: string): number {
   return Math.max(1, 58 - first - gaps * 2 - (text.length - term.length) / 8);
 }
 
+// One text field's fuzzy score, exposed so the palette ranks results the same
+// way the fragment list does instead of requiring a contiguous substring.
+export function matchScore(text: string, query: string): number {
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.replace(/^#/, ""))
+    .filter(Boolean);
+  if (terms.length === 0) return 0;
+  const haystack = text.toLowerCase();
+  let total = 0;
+  for (const term of terms) {
+    const score = fieldScore(haystack, term);
+    if (score < 0) return -1;
+    total += score;
+  }
+  return total;
+}
+
 function entryScore(entry: SearchEntry, terms: string[], includeBody: boolean): number {
   let total = 0;
   for (const term of terms) {

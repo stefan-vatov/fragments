@@ -40,7 +40,7 @@ import { TitleWriteError } from "./library";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
-import { indexFragments, searchFragments, type SearchScope } from "./search";
+import { indexFragments, matchScore, searchFragments, type SearchScope } from "./search";
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -708,13 +708,19 @@ function useFragmentMutations({
 
 // The palette's own result list: nothing else renders it, so it is only built
 // while the dialog is open.
-const paletteResults = (entries: Fragment[], query: string): Fragment[] =>
-  entries
-    .filter((item) =>
-      `${item.title} ${item.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()),
+const paletteResults = (entries: Fragment[], query: string): Fragment[] => {
+  const scores = new Map<string, number>();
+  for (const item of entries) {
+    const score = matchScore(`${item.title} ${item.tags.join(" ")}`, query);
+    if (score >= 0) scores.set(item.path, score);
+  }
+  return entries
+    .filter((item) => scores.has(item.path))
+    .sort(
+      (a, b) => (scores.get(b.path) ?? 0) - (scores.get(a.path) ?? 0) || b.modified - a.modified,
     )
-    .sort((a, b) => b.modified - a.modified)
     .slice(0, 8);
+};
 
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
