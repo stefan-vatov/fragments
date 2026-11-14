@@ -478,7 +478,12 @@ function VirtualList({
                   <small key={tag}>#{tag}</small>
                 ))}
               </span>
-              <time>{age(item.modified)}</time>
+              <time
+                dateTime={new Date(item.modified).toISOString()}
+                title={new Date(item.modified).toLocaleString()}
+              >
+                {age(item.modified)}
+              </time>
             </span>
           </button>
         ))}
