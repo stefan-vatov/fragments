@@ -27,7 +27,14 @@ const bodyOf = (source: string): string => {
 };
 const plainPreview = (body: string): string =>
   body
-    .replace(/[#*_`>[\]]/g, "")
+    // Keep the label, drop the link/image target.
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Raw HTML tags read as noise in a one-line preview; leave a word break.
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    // Leading list and quote markers, per line.
+    .replace(/^\s*(?:[-*+]|\d+[.)]|>)\s+/gm, "")
+    // Remaining heading, emphasis, code and strikethrough marks.
+    .replace(/[#*_`>[\]~]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 140);
