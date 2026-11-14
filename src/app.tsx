@@ -792,6 +792,9 @@ function useController({ plugin, view, handle }: Props) {
     )
     .sort((a, b) => b.modified - a.modified)
     .slice(0, 8);
+  useEffect(() => {
+    setPaletteIndex((current) => Math.min(current, Math.max(paletteItems.length - 1, 0)));
+  }, [paletteItems.length]);
   const choosePalette = (index: number): void => {
     const item = paletteItems[index];
     if (item) {
@@ -1329,6 +1332,12 @@ function GlobalSearch() {
   );
 
   useEffect(() => {
+    // A result can disappear while the dropdown is open (external rename or
+    // delete); keep the highlight on a row that still exists.
+    setActive((current) => Math.min(current, Math.max(results.length - 1, 0)));
+  }, [results.length]);
+
+  useEffect(() => {
     if (!open) return undefined;
     const node = root.current;
     const closeOutside = (event: PointerEvent): void => {
@@ -1784,7 +1793,9 @@ function Dialogs() {
                   onKeyDown={(event) => {
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
-                      setPaletteIndex(Math.min(paletteIndex + 1, paletteItems.length));
+                      setPaletteIndex(
+                        Math.min(paletteIndex + 1, Math.max(paletteItems.length - 1, 0)),
+                      );
                     }
                     if (event.key === "ArrowUp") {
                       event.preventDefault();
