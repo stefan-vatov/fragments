@@ -46,7 +46,7 @@ describe("tag filter chips", () => {
 
     const chip = (text: string): HTMLButtonElement | undefined =>
       [...viewEl.querySelectorAll<HTMLButtonElement>(".fragments-filter-row button")].find(
-        (button) => button.textContent === text,
+        (button) => button.textContent?.startsWith(text) ?? false,
       );
 
     await act(async () => {

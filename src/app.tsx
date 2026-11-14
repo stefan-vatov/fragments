@@ -1049,6 +1049,9 @@ function SidebarPane() {
           >
             <Clock3 size={14} />
             <span>Recent</span>
+            <small>
+              {entries.filter((item) => Date.now() - item.modified <= 30 * 86400000).length}
+            </small>
           </button>
           <div className="fragments-section-heading">
             <h2 className="fragments-section-label">Collections</h2>
@@ -1162,7 +1165,7 @@ function ListPane() {
             >
               All
             </button>
-            {visibleTags.map(([tag]) => (
+            {visibleTags.map(([tag, count]) => (
               <button
                 key={tag}
                 className={tagFilter === tag ? "active" : ""}
@@ -1170,6 +1173,7 @@ function ListPane() {
                 onClick={() => setTagFilter(tag)}
               >
                 #{tag}
+                <small>{count}</small>
               </button>
             ))}
           </div>
