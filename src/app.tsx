@@ -1115,7 +1115,10 @@ function ListPane() {
   }
   return (
     <>
-      <section className={`fragments-list-pane ${mobilePane === "list" ? "mobile-active" : ""}`}>
+      <section
+        className={`fragments-list-pane ${mobilePane === "list" ? "mobile-active" : ""}`}
+        aria-label="Fragment list"
+      >
         <header className="fragments-list-header">
           <div className="fragments-search">
             <Search size={15} />
@@ -1151,7 +1154,7 @@ function ListPane() {
             ))}
           </div>
           <div className="fragments-list-summary">
-            <span>{filtered.length.toLocaleString()} snippets</span>
+            <span aria-live="polite">{filtered.length.toLocaleString()} snippets</span>
             <button
               aria-label="Sort"
               onClick={() => setSort(sort === "recent" ? "name" : "recent")}
