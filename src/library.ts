@@ -215,6 +215,12 @@ export class FragmentLibrary {
     );
   };
 
+  // Unloading the plugin must stop an in-flight load: the generation bump makes
+  // its batch loop exit and suppresses further emits.
+  cancel = (): void => {
+    this.generation += 1;
+  };
+
   async load(): Promise<void> {
     const generation = ++this.generation;
     // A saved setting may predate this canonicalisation (or the folder may

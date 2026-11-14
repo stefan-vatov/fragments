@@ -119,6 +119,7 @@ export default class FragmentsPlugin extends Plugin {
 
   onunload(): void {
     this.unloaded = true;
+    this.library.cancel();
     // Detaching the leaves unmounts the editors; persist their drafts first so
     // the last <=700 ms of typing is not lost on quit or plugin reload.
     void this.flushDrafts()
