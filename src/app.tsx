@@ -440,11 +440,13 @@ function VirtualList({
   selected,
   select,
   resetKey,
+  indexing,
 }: {
   items: Fragment[];
   selected: string | null;
   select: (path: string) => void;
   resetKey: string;
+  indexing: (path: string) => boolean;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -497,7 +499,9 @@ function VirtualList({
               <span className="fragments-result-name">{item.title}</span>
               {item.starred && <Star size={12} fill="currentColor" />}
             </span>
-            <span className="fragments-result-preview">{item.preview || "No content yet"}</span>
+            <span className="fragments-result-preview">
+              {item.preview || (indexing(item.path) ? "Indexing…" : "No content yet")}
+            </span>
             <span className="fragments-result-meta">
               <span>
                 {item.tags.slice(0, 2).map((tag) => (
@@ -1135,6 +1139,7 @@ function ListPane() {
     choose,
     createFragment,
     selectScope,
+    library,
   } = useAppContext();
   // The active filter must stay reachable even when its tag ranks below the top
   // five, otherwise the row looks unfiltered while the list is filtered.
@@ -1204,6 +1209,7 @@ function ListPane() {
             selected={selected}
             select={choose}
             resetKey={listIdentity}
+            indexing={library.indexing}
           />
         ) : (
           <div className="fragments-empty">

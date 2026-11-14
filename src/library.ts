@@ -156,6 +156,7 @@ export class FragmentLibrary {
   private collectionsCache: { revision: number; names: string[] } | null = null;
   private folderExistsCache: { revision: number; exists: boolean } | null = null;
   private readonly reads = new Map<string, number>();
+  private readonly reading = new Set<string>();
   private readonly relocations = new Map<string, string>();
   private readonly retryTimers = new Set<string>();
 
@@ -184,6 +185,10 @@ export class FragmentLibrary {
   };
   // Whether the pad file exists yet; the header must not claim it is saved
   // before the first write creates it.
+  // A body whose read has not finished has no known preview; the list shows a
+  // neutral state instead of claiming there is no content.
+  indexing = (path: string): boolean => this.reading.has(path) || !this.bodyStamps.has(path);
+
   hasScratchpad = (): boolean =>
     this.app.vault.getAbstractFileByPath(this.scratchpadPath()) instanceof TFile;
   // An external change to the pad file must re-render the open session; the
@@ -604,6 +609,7 @@ export class FragmentLibrary {
     }
     const sequence = (this.reads.get(path) ?? 0) + 1;
     this.reads.set(path, sequence);
+    this.reading.add(path);
     try {
       const body = bodyOf(await this.app.vault.cachedRead(file));
       // Reads for one path can finish out of order. Only the newest read may
@@ -626,6 +632,8 @@ export class FragmentLibrary {
         this.retryTimers.delete(path);
         void this.indexBody(file);
       }, 1_000);
+    } finally {
+      this.reading.delete(path);
     }
   }
 
