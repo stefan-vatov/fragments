@@ -22,6 +22,8 @@ After a GitHub remote and `main` branch are available, run `pnpm run release:dry
 
 ## Development
 
+Node 22 and pnpm 10 are required (see `engines` and `.nvmrc`).
+
 ```bash
 pnpm install
 pnpm run dev
