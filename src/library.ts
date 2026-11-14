@@ -463,7 +463,13 @@ export class FragmentLibrary {
       throw new Error("Collection names cannot contain “.” or “..” segments.");
     const path = segments.join("/");
     if (!path) throw new Error("Enter a collection name.");
-    await this.ensureFolder(`${this.folder()}/${path}`);
+    const target = `${this.folder()}/${path}`;
+    // ensureFolder skips every existing path, including files, so a name that
+    // collides with a note (or the scratchpad) would silently do nothing.
+    const existing = this.app.vault.getAbstractFileByPath(target);
+    if (existing && !(existing instanceof TFolder))
+      throw new Error("A file with that name already exists.");
+    await this.ensureFolder(target);
     this.emit();
   }
 
