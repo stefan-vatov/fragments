@@ -424,6 +424,7 @@ function VirtualList({
           <button
             key={item.path}
             className={`fragments-result ${selected === item.path ? "is-selected" : ""}`}
+            aria-current={selected === item.path ? "true" : undefined}
             style={{ top: (start + index) * rowHeight }}
             onClick={() => select(item.path)}
           >
@@ -932,6 +933,7 @@ function SidebarPane() {
           <p className="fragments-section-label">Quick Access</p>
           <button
             className={scope.kind === "all" ? "active" : ""}
+            aria-current={scope.kind === "all" ? "true" : undefined}
             onClick={() => selectScope({ kind: "all" })}
           >
             <Blocks size={14} />
@@ -967,6 +969,9 @@ function SidebarPane() {
             <button
               key={collection}
               className={scope.kind === "collection" && scope.value === collection ? "active" : ""}
+              aria-current={
+                scope.kind === "collection" && scope.value === collection ? "true" : undefined
+              }
               onClick={() => selectScope({ kind: "collection", value: collection })}
             >
               <Folder size={14} />
@@ -989,6 +994,7 @@ function SidebarPane() {
             <button
               key={tag}
               className={scope.kind === "tag" && scope.value === tag ? "active" : ""}
+              aria-current={scope.kind === "tag" && scope.value === tag ? "true" : undefined}
               onClick={() => selectScope({ kind: "tag", value: tag })}
             >
               <Tag size={13} />
@@ -1044,13 +1050,18 @@ function ListPane() {
             />
           </div>
           <div className="fragments-filter-row">
-            <button className={!tagFilter ? "active" : ""} onClick={() => setTagFilter("")}>
+            <button
+              className={!tagFilter ? "active" : ""}
+              aria-current={!tagFilter ? "true" : undefined}
+              onClick={() => setTagFilter("")}
+            >
               All
             </button>
             {visibleTags.map(([tag]) => (
               <button
                 key={tag}
                 className={tagFilter === tag ? "active" : ""}
+                aria-current={tagFilter === tag ? "true" : undefined}
                 onClick={() => setTagFilter(tag)}
               >
                 #{tag}
@@ -1059,7 +1070,10 @@ function ListPane() {
           </div>
           <div className="fragments-list-summary">
             <span>{filtered.length.toLocaleString()} snippets</span>
-            <button onClick={() => setSort(sort === "recent" ? "name" : "recent")}>
+            <button
+              aria-label="Sort"
+              onClick={() => setSort(sort === "recent" ? "name" : "recent")}
+            >
               {sort === "recent" ? "Recent" : "Name"} <ChevronDown size={11} />
             </button>
           </div>
@@ -1486,6 +1500,7 @@ function EditorToolbar({
           <button
             className={selectedItem.starred ? "starred" : ""}
             aria-label={selectedItem.starred ? "Unstar fragment" : "Star fragment"}
+            aria-pressed={selectedItem.starred}
             title="Star fragment"
             onClick={() => void toggleStar()}
           >
