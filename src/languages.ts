@@ -42,7 +42,7 @@ export function highlightCode(element: HTMLElement, source: string, language: st
   element.textContent = source;
   element.removeAttribute("data-highlighted");
   element.className = "";
-  if (!choice || choice.id === "plaintext" || source.length > 20_000) return;
+  if (!choice || choice.id === "plaintext") return;
   element.classList.add(`language-${choice.id}`);
   hljs.highlightElement(element);
 }
