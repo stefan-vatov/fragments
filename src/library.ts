@@ -249,13 +249,11 @@ export class FragmentLibrary {
       await Promise.all(
         files.slice(offset, offset + batchSize).map((file) => this.indexBody(file)),
       );
-      if (
-        generation === this.generation &&
-        (offset % 64 === 0 || offset + batchSize >= files.length)
-      )
-        this.emit();
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
+    // One emit once the bodies are indexed; a per-batch emit would make the app
+    // rebuild search entries, tags and collection counts for every batch.
+    if (generation === this.generation) this.emit();
   }
 
   async refresh(file: TFile): Promise<void> {
