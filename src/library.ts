@@ -143,6 +143,7 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
 export class FragmentLibrary {
   private readonly fragments = new Map<string, Fragment>();
   private readonly bodyIndex = new Map<string, string>();
+  private readonly bodyStamps = new Map<string, number>();
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   private generation = 0;
@@ -191,9 +192,16 @@ export class FragmentLibrary {
     // existing folder matches, so the library never silently empties.
     this.settings.folder = this.existingFolder(this.folder()) ?? this.folder();
     this.fragments.clear();
-    this.bodyIndex.clear();
     this.written.clear();
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.contains(file.path));
+    // Bodies survive a reload while their file is unchanged: switching folders
+    // or renaming an unrelated folder must not re-read the whole corpus.
+    const present = new Set(files.map((file) => file.path));
+    for (const key of this.bodyIndex.keys()) {
+      if (present.has(key)) continue;
+      this.bodyIndex.delete(key);
+      this.bodyStamps.delete(key);
+    }
     for (const file of files) this.updateMetadata(file);
     this.emit();
     const batchSize = 16;
@@ -216,6 +224,9 @@ export class FragmentLibrary {
 
   async refresh(file: TFile): Promise<void> {
     if (!this.contains(file.path)) return;
+    // A refresh means the file changed (create/modify/rename); the mtime check
+    // in indexBody is only a reload optimisation, not a change signal.
+    this.bodyStamps.delete(file.path);
     this.updateMetadata(file);
     await this.indexBody(file);
     this.emit();
@@ -229,6 +240,7 @@ export class FragmentLibrary {
     for (const key of this.fragments.keys()) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.bodyIndex.delete(key);
+      this.bodyStamps.delete(key);
       this.written.delete(key);
       // Keep the counter monotonic instead of deleting it: a read that started
       // before this removal must never match the sequence of a later read that
@@ -538,6 +550,18 @@ export class FragmentLibrary {
 
   private async indexBody(file: TFile): Promise<void> {
     const path = file.path;
+    const stamp = file.stat.mtime;
+    // The body only changes when the file changes; restore the derived fields
+    // from the cache instead of reading and parsing the same text again.
+    if (this.bodyIndex.has(path) && this.bodyStamps.get(path) === stamp) {
+      const item = this.fragments.get(path);
+      if (!item) return;
+      const body = this.bodyIndex.get(path) ?? "";
+      item.preview = plainPreview(body);
+      item.searchText =
+        `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
+      return;
+    }
     const sequence = (this.reads.get(path) ?? 0) + 1;
     this.reads.set(path, sequence);
     try {
@@ -548,6 +572,7 @@ export class FragmentLibrary {
       const item = this.fragments.get(path);
       if (!item) return;
       this.bodyIndex.set(file.path, body);
+      this.bodyStamps.set(file.path, stamp);
       item.preview = plainPreview(body);
       item.searchText =
         `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
