@@ -1105,6 +1105,14 @@ function SidebarPane() {
           <span className="fragments-vault-name" title={plugin.app.vault.getName()}>
             Vault · {plugin.app.vault.getName()}
           </span>
+          <span className="fragments-library-folder" title={library.folder()}>
+            Folder · {library.folder()}
+          </span>
+          {!library.folderExists() && (
+            <span className="fragments-folder-missing" role="alert">
+              Configured folder not found
+            </span>
+          )}
         </footer>
       </aside>
     </>

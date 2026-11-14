@@ -154,6 +154,7 @@ export class FragmentLibrary {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly written = new Map<string, string>();
   private collectionsCache: { revision: number; names: string[] } | null = null;
+  private folderExistsCache: { revision: number; exists: boolean } | null = null;
   private readonly reads = new Map<string, number>();
   private readonly relocations = new Map<string, string>();
 
@@ -171,6 +172,15 @@ export class FragmentLibrary {
   entries = (): Fragment[] => [...this.fragments.values()];
   folder = (): string => cleanFolder(this.settings.folder) || "Fragments";
   scratchpadPath = (): string => `${this.folder()}/${SCRATCHPAD_NAME}`;
+  // Whether the configured library folder exists in the vault; the sidebar
+  // flags a missing folder instead of looking like an empty library. Cached per
+  // revision so a re-render does not walk the vault again.
+  folderExists = (): boolean => {
+    if (this.folderExistsCache?.revision === this.revision) return this.folderExistsCache.exists;
+    const exists = this.app.vault.getAbstractFileByPath(this.folder()) instanceof TFolder;
+    this.folderExistsCache = { revision: this.revision, exists };
+    return exists;
+  };
   // Whether the pad file exists yet; the header must not claim it is saved
   // before the first write creates it.
   hasScratchpad = (): boolean =>
@@ -245,6 +255,7 @@ export class FragmentLibrary {
     // Obsidian emits one event for a renamed or deleted folder, not one per
     // descendant file, so evict every indexed path at or below it.
     this.collectionsCache = null;
+    this.folderExistsCache = null;
     let changed = false;
     for (const key of this.fragments.keys()) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
@@ -477,6 +488,7 @@ export class FragmentLibrary {
   // fragment, so the collections cache must be dropped and listeners told.
   folderTreeChanged = (): void => {
     this.collectionsCache = null;
+    this.folderExistsCache = null;
     this.emit();
   };
 
@@ -617,6 +629,7 @@ export class FragmentLibrary {
       if (!this.app.vault.getAbstractFileByPath(part)) {
         await run(() => this.app.vault.createFolder(part));
         this.collectionsCache = null;
+        this.folderExistsCache = null;
       }
     }
   }
