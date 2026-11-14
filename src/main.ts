@@ -191,12 +191,12 @@ export default class FragmentsPlugin extends Plugin {
         container !== workspace.rootSplit &&
         container.doc.documentElement.hasAttribute(WINDOW_MARKER)
       ) {
-        found =
-          workspace
-            .getLeavesOfType(FRAGMENTS_VIEW)
-            .find((candidate) => candidate.getContainer() === container) ??
-          workspace.getMostRecentLeaf(container) ??
-          leaf;
+        // Reuse a Fragments leaf in this window only. Falling back to the
+        // window's most recent tab would convert an unrelated note into the
+        // Fragments view and replace what the user had open there.
+        found = workspace
+          .getLeavesOfType(FRAGMENTS_VIEW)
+          .find((candidate) => candidate.getContainer() === container);
       }
     });
     return found;
