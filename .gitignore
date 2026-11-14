@@ -489,6 +489,7 @@ build/Release
 # Dependency directories
 node_modules/
 main.js
+/build/
 data.json
 jspm_packages/
 
