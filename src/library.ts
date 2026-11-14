@@ -55,6 +55,35 @@ const decodeTags = Schema.decodeUnknownOption(
   Schema.Union(Schema.Array(Schema.String), Schema.String),
 );
 
+// Windows refuses these device names even with an extension.
+const RESERVED_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
+
+/** Turns a requested title into a file name every supported platform accepts. */
+const safeFileName = (name: string): string => {
+  let cleaned = "";
+  for (const character of name) {
+    // Control characters have no place in a file name.
+    const code = character.codePointAt(0) ?? 0;
+    cleaned += code < 0x20 || code === 0x7f ? " " : character;
+  }
+  cleaned = cleaned
+    // The nine characters Windows refuses.
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .trim()
+    // Windows strips trailing dots and spaces before adding the extension.
+    .replace(/[. ]+$/, "");
+  if (!cleaned) return "Untitled";
+  if (RESERVED_NAMES.has(cleaned.toLowerCase())) return `_${cleaned}`;
+  return cleaned;
+};
+
 interface RawFrontmatter {
   title?: unknown;
   tags?: unknown;
@@ -303,7 +332,7 @@ export class FragmentLibrary {
     if (!requested) throw new Error("Enter a title.");
     const parent = file.parent?.path ?? this.folder();
     const unique = this.availableTitle(requested, path);
-    const safe = unique.replace(/[\\/:*?"<>|]/g, "-");
+    const safe = safeFileName(unique);
     const next = this.availablePath(parent, safe, file);
     // Check the final, de-duplicated path: an already-taken reserved title
     // becomes "_fragments-scratchpad (1)" and cannot collide with the pad file.
@@ -342,7 +371,7 @@ export class FragmentLibrary {
     const occupied = this.app.vault.getAbstractFileByPath(requestedPath);
     const title = this.entries().find((entry) => entry.path === path)?.title ?? file.basename;
     const unique = occupied && occupied !== file ? this.availableTitle(title, path) : title;
-    const base = unique === title ? file.basename : unique.replace(/[\\/:*?"<>|]/g, "-");
+    const base = unique === title ? safeFileName(file.basename) : safeFileName(unique);
     const next = this.availablePath(folder, base, file);
     // Only the final path matters: a name that gets suffixed is not the pad file.
     if (next === this.scratchpadPath())
