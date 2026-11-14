@@ -1,13 +1,13 @@
 {
   "name": "fragments",
   "version": "1.5.7",
-  "license": "MIT",
   "description": "A fast, local-first snippet library for Obsidian",
   "keywords": [
     "obsidian",
     "obsidian-plugin"
   ],
-  "type": "module",
+  "license": "MIT",
+  "type": "commonjs",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
