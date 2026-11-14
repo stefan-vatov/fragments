@@ -1420,7 +1420,7 @@ function GlobalSearch() {
         value={query}
         onFocus={() => setOpen(true)}
         onChange={(event) => {
-          setQuery(event.target.value.slice(0, 100));
+          setQuery(event.target.value);
           setActive(0);
           setOpen(true);
         }}
