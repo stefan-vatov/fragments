@@ -1732,6 +1732,7 @@ function Dialogs() {
                 <Search size={19} />
                 <input
                   autoFocus
+                  aria-label="Search commands and snippets"
                   value={paletteQuery}
                   onChange={(event) => {
                     setPaletteQuery(event.target.value);
