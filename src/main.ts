@@ -60,7 +60,10 @@ export default class FragmentsPlugin extends Plugin {
       await this.activateView();
     });
     this.app.workspace.onLayoutReady(() => {
-      if (this.app.workspace.getLeavesOfType(FRAGMENTS_VIEW).length) void this.activateView();
+      // Restoring the saved layout must not steal focus from the note the user
+      // is opening at startup.
+      if (this.app.workspace.getLeavesOfType(FRAGMENTS_VIEW).length)
+        void this.activateView({ reveal: false });
     });
     this.registerEvent(
       this.app.vault.on("create", (file) => {
@@ -143,8 +146,9 @@ export default class FragmentsPlugin extends Plugin {
     }
   }
 
-  activateView(): Promise<WorkspaceLeaf | undefined> {
-    this.activation = this.activation.catch(() => undefined).then(() => this.openView());
+  activateView(options: { reveal?: boolean } = {}): Promise<WorkspaceLeaf | undefined> {
+    const reveal = options.reveal ?? true;
+    this.activation = this.activation.catch(() => undefined).then(() => this.openView(reveal));
     return this.activation;
   }
 
@@ -158,15 +162,15 @@ export default class FragmentsPlugin extends Plugin {
     if (leaf?.view instanceof FragmentsView) leaf.view.openPalette();
   }
 
-  private async openView(): Promise<WorkspaceLeaf | undefined> {
+  private async openView(reveal: boolean): Promise<WorkspaceLeaf | undefined> {
     if (this.unloaded) return undefined;
     try {
       const workspace = this.app.workspace;
       const leaves = workspace.getLeavesOfType(FRAGMENTS_VIEW);
       const leaf = this.prepareLeaf(leaves);
       if (!(leaf.view instanceof FragmentsView))
-        await leaf.setViewState({ type: FRAGMENTS_VIEW, active: true });
-      await workspace.revealLeaf(leaf);
+        await leaf.setViewState({ type: FRAGMENTS_VIEW, active: reveal });
+      if (reveal) await workspace.revealLeaf(leaf);
       for (const duplicate of leaves) if (duplicate !== leaf) duplicate.detach();
       return leaf;
     } catch {

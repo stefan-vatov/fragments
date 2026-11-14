@@ -103,6 +103,19 @@ describe("plugin lifecycle", () => {
     expect(second.detach).toHaveBeenCalled();
   });
 
+  it("restores a saved leaf without stealing focus", async () => {
+    const { plugin, workspace, setLeaves, settle } = setup();
+    const leaf = makeLeaf({});
+    const view = new FragmentsView(leaf as never, plugin);
+    leaf.view = view;
+    setLeaves([leaf]);
+    await plugin.onload();
+    settle();
+    await tick();
+    expect(workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(leaf.setViewState).not.toHaveBeenCalled();
+  });
+
   it("forwards the new-fragment and search commands to the view", async () => {
     const { plugin, commands, setLeaves } = setup();
     const leaf = makeLeaf({});
