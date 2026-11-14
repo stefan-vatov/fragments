@@ -1805,13 +1805,25 @@ function EditorPane() {
             <p>Creating fragment…</p>
           </div>
         ) : (
-          <div className="fragments-welcome">
-            <FilePlus2 size={32} />
-            <h2>Your fragment library</h2>
-            <p>Choose a fragment or create one to begin.</p>
-            <button className="fragments-primary" onClick={() => void createFragment()}>
-              New Snippet
-            </button>
+          // The scratchpad is an independent shared file; keep it reachable
+          // even when there is no fragment to show beside it.
+          <div className={`fragments-editor-workspace ${scratchOpen ? "has-scratchpad" : ""}`}>
+            <div className="fragments-welcome">
+              <FilePlus2 size={32} />
+              <h2>Your fragment library</h2>
+              <p>Choose a fragment or create one to begin.</p>
+              <button className="fragments-primary" onClick={() => void createFragment()}>
+                New Snippet
+              </button>
+            </div>
+            {scratchOpen && (
+              <Scratchpad
+                text={scratchText}
+                status={scratchStatus}
+                onChange={editScratchpad}
+                onSave={saveScratchpad}
+              />
+            )}
           </div>
         )}
       </main>
