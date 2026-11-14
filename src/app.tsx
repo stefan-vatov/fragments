@@ -955,7 +955,6 @@ function SidebarPane() {
           ))}
           <div className="fragments-section-heading">
             <p className="fragments-section-label">Tags</p>
-            <ChevronDown size={13} />
           </div>
           {tags.map(([tag, count]) => (
             <button
