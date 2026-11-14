@@ -208,9 +208,18 @@ export class FragmentLibrary {
   // whether a change they are reacting to is one they already hold.
   indexedBody = (path: string): string | undefined => this.bodyIndex.get(path);
   // An external rename moves the file; in-flight drafts and mutations addressed
-  // to the old path must land on the file that now exists.
+  // to the old path must land on the file that now exists. Existing entries are
+  // rewritten so a chain (A->B->C) never leaves A pointing at a missing path.
   relocate = (from: string, to: string): void => {
+    if (from === to) {
+      this.relocations.delete(from);
+      return;
+    }
+    for (const [key, value] of this.relocations) {
+      if (value === from) this.relocations.set(key, to);
+    }
     this.relocations.set(from, to);
+    for (const [key, value] of this.relocations) if (key === value) this.relocations.delete(key);
   };
   relocation = (path: string): string | undefined => this.relocations.get(path);
   contains = (path: string): boolean => {
@@ -231,6 +240,9 @@ export class FragmentLibrary {
 
   async load(): Promise<void> {
     const generation = ++this.generation;
+    // Paths are rebuilt from scratch; stale moves from a previous folder or
+    // session must not redirect writes.
+    this.relocations.clear();
     // A saved setting may predate this canonicalisation (or the folder may
     // have been renamed with different case). Adopt the vault's casing when an
     // existing folder matches, so the library never silently empties.
@@ -296,6 +308,10 @@ export class FragmentLibrary {
       // the re-created one.
       this.reads.set(key, (this.reads.get(key) ?? 0) + 1);
       changed = this.fragments.delete(key) || changed;
+    }
+    for (const [from, to] of this.relocations) {
+      if (from === path || from.startsWith(`${path}/`) || to === path || to.startsWith(`${path}/`))
+        this.relocations.delete(from);
     }
     if (changed) this.emit();
   }
@@ -666,8 +682,22 @@ export class FragmentLibrary {
     }
   }
 
+  // Follow recorded moves to the file that exists now, with a visited set so a
+  // malformed pair can never loop.
+  private resolvePath(path: string): string {
+    let current = path;
+    const seen = new Set<string>();
+    while (!seen.has(current)) {
+      seen.add(current);
+      const next = this.relocations.get(current);
+      if (!next) return current;
+      current = next;
+    }
+    return current;
+  }
+
   private file(path: string): TFile {
-    const file = this.app.vault.getAbstractFileByPath(this.relocations.get(path) ?? path);
+    const file = this.app.vault.getAbstractFileByPath(this.resolvePath(path));
     if (!(file instanceof TFile) || !this.contains(file.path))
       throw new Error("Fragment is no longer available.");
     return file;
