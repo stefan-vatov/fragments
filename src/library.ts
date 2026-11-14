@@ -162,6 +162,10 @@ export class FragmentLibrary {
   private readonly reading = new Set<string>();
   private readonly relocations = new Map<string, string>();
   private readonly retryTimers = new Set<string>();
+  private readonly retryCounts = new Map<string, number>();
+  // Paths whose body read failed past the retry budget: the row must not claim
+  // it is still indexing forever.
+  private readonly failedIndex = new Set<string>();
 
   constructor(
     private readonly app: App,
@@ -190,7 +194,8 @@ export class FragmentLibrary {
   // before the first write creates it.
   // A body whose read has not finished has no known preview; the list shows a
   // neutral state instead of claiming there is no content.
-  indexing = (path: string): boolean => this.reading.has(path) || !this.bodyStamps.has(path);
+  indexing = (path: string): boolean =>
+    this.reading.has(path) || (!this.bodyStamps.has(path) && !this.failedIndex.has(path));
 
   hasScratchpad = (): boolean =>
     this.app.vault.getAbstractFileByPath(this.scratchpadPath()) instanceof TFile;
@@ -264,6 +269,9 @@ export class FragmentLibrary {
     // A refresh means the file changed (create/modify/rename); the mtime check
     // in indexBody is only a reload optimisation, not a change signal.
     this.bodyStamps.delete(file.path);
+    // A real change deserves a fresh retry budget.
+    this.failedIndex.delete(file.path);
+    this.retryCounts.delete(file.path);
     this.updateMetadata(file);
     await this.indexBody(file);
     this.emit();
@@ -280,6 +288,8 @@ export class FragmentLibrary {
       this.bodyIndex.delete(key);
       this.bodyStamps.delete(key);
       this.written.delete(key);
+      this.failedIndex.delete(key);
+      this.retryCounts.delete(key);
       // Keep the counter monotonic instead of deleting it: a read that started
       // before this removal must never match the sequence of a later read that
       // reuses the same path, or the deleted file's body would be applied to
@@ -629,13 +639,22 @@ export class FragmentLibrary {
       if (!item) return;
       this.bodyIndex.set(file.path, body);
       this.bodyStamps.set(file.path, stamp);
+      this.failedIndex.delete(path);
+      this.retryCounts.delete(path);
       item.preview = plainPreview(body);
       item.searchText =
         `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
     } catch {
       // A file may disappear while the background index is reading it, or a
-      // transient failure leaves the preview empty; retry once so the fragment
-      // does not stay unfindable by its content.
+      // transient failure leaves the preview empty. Retry a bounded number of
+      // times, then stop: a permanently unreadable file must not schedule reads
+      // for the rest of the session.
+      const attempts = (this.retryCounts.get(path) ?? 0) + 1;
+      if (attempts > 3) {
+        this.failedIndex.add(path);
+        return;
+      }
+      this.retryCounts.set(path, attempts);
       if (this.retryTimers.has(path)) return;
       this.retryTimers.add(path);
       window.setTimeout(() => {
