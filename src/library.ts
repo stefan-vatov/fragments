@@ -156,6 +156,9 @@ export class FragmentLibrary {
   private collectionsCache: { revision: number; names: string[] } | null = null;
   private folderExistsCache: { revision: number; exists: boolean } | null = null;
   private readonly reads = new Map<string, number>();
+  // Body edits are tracked separately: a star/tag/title write also bumps the
+  // file's mtime, which would otherwise make the note look newly edited.
+  private readonly edited = new Map<string, number>();
   private readonly reading = new Set<string>();
   private readonly relocations = new Map<string, string>();
   private readonly retryTimers = new Set<string>();
@@ -373,6 +376,7 @@ export class FragmentLibrary {
         }),
       );
       this.written.set(path, body);
+      this.edited.set(path, Date.now());
       await this.refresh(file);
     });
   }
@@ -383,6 +387,7 @@ export class FragmentLibrary {
   ): Promise<void> {
     await this.queue(path, async () => {
       const file = this.file(path);
+      const previous = this.fragments.get(path)?.modified;
       await run(() =>
         this.app.fileManager.processFrontMatter(file, (matter) => {
           const frontmatter = matter as { tags?: string[]; starred?: boolean; language?: string };
@@ -391,6 +396,7 @@ export class FragmentLibrary {
           if (changes.language !== undefined) frontmatter.language = changes.language;
         }),
       );
+      if (previous !== undefined) this.edited.set(path, previous);
       await this.refresh(file);
     });
   }
@@ -590,7 +596,7 @@ export class FragmentLibrary {
       tags: matter.tags,
       starred: matter.starred,
       language: matter.language,
-      modified: file.stat.mtime,
+      modified: this.edited.get(file.path) ?? file.stat.mtime,
       preview: previous?.preview ?? "",
       searchText:
         `${title} ${collection} ${matter.tags.join(" ")} ${this.bodyIndex.get(file.path) ?? ""}`.toLowerCase(),
