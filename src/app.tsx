@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { flushSync } from "react-dom";
 import { Component, MarkdownRenderer, Notice, Platform, TFile, type App } from "obsidian";
 import {
   Blocks,
@@ -675,7 +676,13 @@ function useFragmentMutations({
         await save(false);
         const target = file.path;
         await library.trash(target);
-        selectRelocated(source, target, file, null);
+        // The trashed row takes its button with it: commit the new selection
+        // first, then put focus back into the editor so keyboard users keep
+        // their place instead of landing on the document body.
+        flushSync(() => selectRelocated(source, target, file, null));
+        view.containerEl.ownerDocument
+          .querySelector<HTMLInputElement>('[aria-label="Fragment title"]')
+          ?.focus();
       });
     } catch (error) {
       errorNotice(error as Error);
