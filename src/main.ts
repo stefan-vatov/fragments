@@ -1,6 +1,11 @@
 import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile, TFolder } from "obsidian";
 import { FragmentLibrary } from "./library";
-import { DEFAULT_SETTINGS, FragmentsSettingTab, type FragmentsSettings } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  FragmentsSettingTab,
+  parseStoredSettings,
+  type FragmentsSettings,
+} from "./settings";
 import { FRAGMENTS_VIEW, FragmentsView } from "./view";
 
 const WINDOW_MARKER = "data-fragments-app-window";
@@ -21,10 +26,9 @@ export default class FragmentsPlugin extends Plugin {
   settingsSnapshot = (): number => this.settingsRevision;
 
   async onload(): Promise<void> {
-    this.settings = {
-      ...this.settings,
-      ...((await this.loadData()) as Partial<FragmentsSettings> | null),
-    };
+    // `loadData()` is `any`; parseStoredSettings decodes every field it trusts.
+    const stored = (await this.loadData()) as Partial<FragmentsSettings> | null;
+    this.settings = { ...this.settings, ...parseStoredSettings(stored) };
     this.library = new FragmentLibrary(this.app, this.settings);
     this.registerView(FRAGMENTS_VIEW, (leaf) => new FragmentsView(leaf, this));
     this.addSettingTab(new FragmentsSettingTab(this.app, this));

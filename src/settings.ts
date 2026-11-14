@@ -7,6 +7,7 @@ import {
   type FuzzyMatch,
   type TextComponent,
 } from "obsidian";
+import { Option, Schema } from "effect";
 import { FolderSuggest } from "./folder-suggest";
 import type { LibrarySettings } from "./library";
 import type FragmentsPlugin from "./main";
@@ -23,6 +24,31 @@ export const DEFAULT_SETTINGS: FragmentsSettings = {
   snippetFont: "monospace",
   customSnippetFont: "",
 };
+
+const decodeStoredString = Schema.decodeUnknownOption(Schema.String);
+const decodeStoredFont = Schema.decodeUnknownOption(
+  Schema.Literal("monospace", "text", "interface", "serif", "custom"),
+);
+
+/**
+ * `data.json` is user-editable, so the stored object is not trustworthy even
+ * though it is typed as settings once loaded. Decode each field at this one
+ * boundary; a field whose stored type is wrong is dropped (so its default
+ * applies) without discarding the fields that are still valid.
+ */
+export function parseStoredSettings(
+  stored: Partial<FragmentsSettings> | null | undefined,
+): Partial<FragmentsSettings> {
+  if (!stored) return {};
+  const result: Partial<FragmentsSettings> = {};
+  const folder = Option.getOrUndefined(decodeStoredString(stored.folder));
+  if (folder !== undefined) result.folder = folder;
+  const snippetFont = Option.getOrUndefined(decodeStoredFont(stored.snippetFont));
+  if (snippetFont !== undefined) result.snippetFont = snippetFont;
+  const customSnippetFont = Option.getOrUndefined(decodeStoredString(stored.customSnippetFont));
+  if (customSnippetFont !== undefined) result.customSnippetFont = customSnippetFont;
+  return result;
+}
 
 interface FontChoice {
   label: string;
