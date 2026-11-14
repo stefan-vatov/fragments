@@ -163,6 +163,8 @@ function useDraft(
   );
   const [buffer, setBuffer] = useState<DraftBuffer | null>(null);
   const [saveAttempt, setSaveAttempt] = useState(0);
+  const [readFailed, setReadFailed] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const pendingDraft = useRef<PendingDraft | null>(null);
   const ready = buffer?.owner === owner;
   const body = ready ? buffer.body : "";
@@ -194,19 +196,29 @@ function useDraft(
     if (bodyRef.current && library.indexedBody(owner.path) === bodyRef.current) return undefined;
     let active = true;
     const edits = owner.edits;
+    setReadFailed(false);
     void library
       .read(owner.path)
       .then((text) => {
         if (!active || owner.edits !== edits || pendingDraft.current?.owner === owner) return;
         setBuffer({ owner, body: text, draft: text, dirty: false });
+        setReadFailed(false);
       })
       .catch((error: Error) => {
-        if (active) errorNotice(error);
+        if (!active) return;
+        // The editor must not keep pretending to load: offer a retry instead.
+        setReadFailed(true);
+        errorNotice(error);
       });
     return () => {
       active = false;
     };
-  }, [owner, modified, library]);
+  }, [owner, modified, library, readAttempt]);
+
+  const retryRead = useCallback((): void => {
+    setReadFailed(false);
+    setReadAttempt((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -269,7 +281,7 @@ function useDraft(
     setBuffer({ owner, body, draft: text, dirty: true });
   };
 
-  return { body, draft, dirty, ready, save, edit };
+  return { body, draft, dirty, ready, readFailed, retryRead, save, edit };
 }
 
 function Preview({
@@ -708,14 +720,13 @@ function useController({ plugin, view, handle }: Props) {
     (selected
       ? [...(transitioning.current.get(selected)?.values() ?? [])].at(-1)?.item
       : undefined);
-  const {
-    body,
-    draft,
-    dirty,
-    ready: draftReady,
-    save,
-    edit,
-  } = useDraft(library, selectedItem?.path ?? null, selectedItem?.modified, creationRevision);
+  const draftState = useDraft(
+    library,
+    selectedItem?.path ?? null,
+    selectedItem?.modified,
+    creationRevision,
+  );
+  const { body, draft, dirty, ready: draftReady, save, edit } = draftState;
   const { toggleStar, updateTags, rename, move, trash, waitForMutations } = useFragmentMutations({
     app: plugin.app,
     library,
@@ -870,6 +881,8 @@ function useController({ plugin, view, handle }: Props) {
     draft,
     dirty,
     draftReady,
+    readFailed: draftState.readFailed,
+    retryRead: draftState.retryRead,
     tags,
     filtered,
     searchIndex,
@@ -1632,6 +1645,8 @@ function EditorPane() {
     library,
     draft,
     draftReady,
+    readFailed,
+    retryRead,
     dirty,
     body,
     edit,
@@ -1725,6 +1740,12 @@ function EditorPane() {
                     )}
                   </div>
                 </div>
+                {readFailed && (
+                  <div className="fragments-read-error" role="alert">
+                    <span>This fragment could not be loaded.</span>
+                    <button onClick={retryRead}>Retry</button>
+                  </div>
+                )}
                 {mode === "edit" ? (
                   <HighlightedEditor
                     body={draft}
