@@ -996,6 +996,13 @@ function ListPane() {
     choose,
     createFragment,
   } = useAppContext();
+  // The active filter must stay reachable even when its tag ranks below the top
+  // five, otherwise the row looks unfiltered while the list is filtered.
+  const visibleTags = tags.slice(0, 5);
+  if (tagFilter && !visibleTags.some(([tag]) => tag === tagFilter)) {
+    const activeTag = tags.find(([tag]) => tag === tagFilter);
+    if (activeTag) visibleTags.push(activeTag);
+  }
   return (
     <>
       <section className={`fragments-list-pane ${mobilePane === "list" ? "mobile-active" : ""}`}>
@@ -1013,7 +1020,7 @@ function ListPane() {
             <button className={!tagFilter ? "active" : ""} onClick={() => setTagFilter("")}>
               All
             </button>
-            {tags.slice(0, 5).map(([tag]) => (
+            {visibleTags.map(([tag]) => (
               <button
                 key={tag}
                 className={tagFilter === tag ? "active" : ""}
