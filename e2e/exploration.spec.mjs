@@ -1351,7 +1351,7 @@ test("an over-long title reports failure and keeps the persisted title", async (
   await expect(title(app)).not.toHaveValue("L".repeat(300));
 });
 
-test.fixme("clearing the title does not report Saved for an unpersisted state", async ({ app }) => {
+test("clearing the title does not report Saved for an unpersisted state", async ({ app }) => {
   await choose(app, "Playwright desk");
   await title(app).fill("");
   await editor(app).click();

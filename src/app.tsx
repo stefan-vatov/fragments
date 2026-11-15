@@ -733,6 +733,7 @@ function useFragmentMutations({
   // Clicks between a mutation and the library re-render all read the same
   // snapshot, so remember the intended value per path; otherwise two fast
   // clicks queue the same write instead of undoing each other.
+  const [titleRejected, setTitleRejected] = useState(false);
   const starIntent = useRef(new Map<string, boolean>());
   // The intent only bridges the gap between a click and the library re-reading
   // the write. Once the library reflects it — or the path is gone — the intent
@@ -778,7 +779,10 @@ function useFragmentMutations({
     }
   };
   const rename = async (value: string): Promise<boolean> => {
-    if (!selectedItem || value.trim() === selectedItem.title) return false;
+    if (!selectedItem || value.trim() === selectedItem.title) {
+      setTitleRejected(false);
+      return false;
+    }
     const source = selectedItem.path;
     try {
       const file = captureFile(source);
@@ -788,8 +792,10 @@ function useFragmentMutations({
         const next = await library.rename(previous, value);
         selectRelocated(source, previous, file, next);
       });
+      setTitleRejected(false);
       return true;
     } catch (error) {
+      setTitleRejected(true);
       errorNotice(error as Error);
       // A failed title write still leaves the file at its new path; keep the
       // editor on it instead of clearing the selection and jumping elsewhere.
@@ -854,8 +860,11 @@ function useFragmentMutations({
       errorNotice(error as Error);
     }
   };
+  useEffect(() => {
+    setTitleRejected(false);
+  }, [selectedItem?.path]);
   const waitForMutations = useCallback((): Promise<void> => mutations.current, []);
-  return { toggleStar, updateTags, rename, move, trash, waitForMutations };
+  return { toggleStar, updateTags, rename, move, trash, waitForMutations, titleRejected };
 }
 
 // The palette's own result list: nothing else renders it, so it is only built
@@ -927,15 +936,16 @@ function useController({ plugin, view, handle }: Props) {
   );
   const { body, draft, dirty, ready: draftReady, save, edit } = draftState;
   const { recovered, dismissRecovered } = draftState;
-  const { toggleStar, updateTags, rename, move, trash, waitForMutations } = useFragmentMutations({
-    app: plugin.app,
-    library,
-    selectedItem,
-    save,
-    setSelected,
-    transitioning: transitioning.current,
-    view,
-  });
+  const { toggleStar, updateTags, rename, move, trash, waitForMutations, titleRejected } =
+    useFragmentMutations({
+      app: plugin.app,
+      library,
+      selectedItem,
+      save,
+      setSelected,
+      transitioning: transitioning.current,
+      view,
+    });
   const tags = useMemo(() => countTags(entries), [entries]);
   const searchIndex = useMemo(() => indexFragments(entries), [entries]);
 
@@ -1107,6 +1117,7 @@ function useController({ plugin, view, handle }: Props) {
     rename,
     move,
     trash,
+    titleRejected,
     edit,
     save,
     paletteItems,
@@ -1764,7 +1775,7 @@ function countWords(text: string): number {
 }
 
 function FragmentFooter() {
-  const { draft, dirty, selectedItem, save } = useAppContext();
+  const { draft, dirty, selectedItem, save, titleRejected } = useAppContext();
   const counts = useMemo(() => ({ chars: draft.length, words: countWords(draft) }), [draft]);
   if (!selectedItem) return null;
   return (
@@ -1774,7 +1785,7 @@ function FragmentFooter() {
       </span>
       <span>{dirty ? "Unsaved changes" : `Last edited ${age(selectedItem.modified)}`}</span>
       <button disabled={!dirty} onClick={() => void save()}>
-        {dirty ? "Save changes" : "Saved"}
+        {dirty ? "Save changes" : titleRejected ? "Title not saved" : "Saved"}
       </button>
     </footer>
   );
