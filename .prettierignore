@@ -1,0 +1,5 @@
+# Preserve upstream Canon skill copies and the generated managed AGENTS.md block.
+/AGENTS.md
+/.agents/skills/compact-canon/
+/.codex/skills/compact-canon/
+/.claude/skills/compact-canon/

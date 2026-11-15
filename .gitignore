@@ -692,4 +692,4 @@ $RECYCLE.BIN/
 # Mutation testing output
 .stryker-tmp/
 reports/
-canon/scratch
+canon/scratch/
