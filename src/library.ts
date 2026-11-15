@@ -44,6 +44,7 @@ const bodyOf = (source: string): string => {
   const info = getFrontMatterInfo(source);
   return info.exists ? source.slice(info.contentStart).replace(/^\r?\n/, "") : source;
 };
+const utf8Length = (value: string): number => new TextEncoder().encode(value).length;
 const plainPreview = (body: string): string =>
   body
     // Keep the label, drop the link/image target.
@@ -451,6 +452,10 @@ export class FragmentLibrary {
     const unique = this.availableTitle(requested, path);
     const safe = safeFileName(unique);
     const next = this.availablePath(parent, safe, file);
+    // Most filesystems cap a name at 255 bytes; refuse before the rename so the
+    // UI can report a validation error instead of an ENAMETOOLONG from the OS.
+    if (utf8Length(next.slice(next.lastIndexOf("/") + 1)) > 252)
+      throw new Error("That title is too long for a file name.");
     // Check the final, de-duplicated path: an already-taken reserved title
     // becomes "_fragments-scratchpad (1)" and cannot collide with the pad file.
     if (next.toLowerCase() === this.scratchpadPath().toLowerCase())

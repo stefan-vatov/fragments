@@ -1343,7 +1343,7 @@ test("save-conflict feedback is visible in the Fragments window", async ({ app, 
   );
 });
 
-test.fixme("an over-long title reports failure and keeps the persisted title", async ({ app }) => {
+test("an over-long title reports failure and keeps the persisted title", async ({ app }) => {
   await app.getByRole("button", { name: "New Snippet", exact: true }).click();
   await title(app).fill("L".repeat(300));
   await editor(app).click();
