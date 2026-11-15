@@ -818,14 +818,21 @@ function useFragmentMutations({
       return false;
     }
   };
-  const move = async (value: string): Promise<void> => {
+  const move = async (value: string, titleDraft?: string): Promise<void> => {
     if (!selectedItem || value === selectedItem.collection) return;
     const source = selectedItem.path;
     try {
       const file = captureFile(source);
       await transition(selectedItem, file, async () => {
         await save(false);
-        const previous = file.path;
+        let previous = file.path;
+        // The title field commits on blur, but a collection change can move the
+        // focus before that blur lands. Persist the visible title here so the
+        // move never publishes a stale one.
+        const requested = titleDraft?.trim();
+        if (requested && requested !== selectedItem.title) {
+          previous = await library.rename(previous, requested);
+        }
         const next = await library.move(previous, value);
         selectRelocated(source, previous, file, next);
       });
@@ -2106,6 +2113,32 @@ function EditorToolbar({
   );
 }
 
+function CollectionPicker({
+  collection,
+  collections,
+  onChange,
+}: {
+  collection: string;
+  collections: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      aria-label="Collection"
+      title={collection || "No collection"}
+      value={collection}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">No collection</option>
+      {collections.map((name) => (
+        <option key={name} value={name} title={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function EditorPane() {
   const {
     mobilePane,
@@ -2183,19 +2216,16 @@ function EditorPane() {
             <div className={`fragments-editor-workspace ${scratchOpen ? "has-scratchpad" : ""}`}>
               <div className="fragments-fragment-content">
                 <div className="fragments-properties">
-                  <select
-                    aria-label="Collection"
-                    title={selectedItem.collection || "No collection"}
-                    value={selectedItem.collection}
-                    onChange={(event) => void move(event.target.value)}
-                  >
-                    <option value="">No collection</option>
-                    {library.collections().map((collection) => (
-                      <option key={collection} value={collection} title={collection}>
-                        {collection}
-                      </option>
-                    ))}
-                  </select>
+                  <CollectionPicker
+                    collection={selectedItem.collection}
+                    collections={library.collections()}
+                    onChange={(value) => {
+                      const title = view.containerEl.querySelector<HTMLInputElement>(
+                        'input[aria-label="Fragment title"]',
+                      );
+                      void move(value, title?.value);
+                    }}
+                  />
                   <LanguageInput
                     key={`${selectedItem.path}:${selectedItem.language}`}
                     item={selectedItem}

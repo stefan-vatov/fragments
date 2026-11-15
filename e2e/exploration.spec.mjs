@@ -468,10 +468,7 @@ test("a stale second window cannot overwrite a newer save", async ({ app, sessio
   }
 });
 
-test.fixme("a title edit made just before a collection change is not lost", async ({
-  app,
-  session,
-}) => {
+test("a title edit made just before a collection change is not lost", async ({ app, session }) => {
   await choose(app, "Playwright rename source");
   await title(app).fill("Renamed Before Move");
   await app.getByRole("combobox", { name: "Collection", exact: true }).selectOption("Examples");
