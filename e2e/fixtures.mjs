@@ -23,6 +23,9 @@ async function unload(session) {
 
 async function prepare(session) {
   await unload(session);
+  session.previousFolder = await session.host.evaluate(
+    () => app.plugins.plugins.fragments?.settings?.folder ?? null,
+  );
   await session.host.evaluate(async (root) => {
     const previous = app.vault.getAbstractFileByPath(root);
     if (previous) await app.vault.delete(previous, true);
@@ -80,11 +83,20 @@ export const test = base.extend({
       } finally {
         try {
           await unload(session);
-          await session.host.evaluate(async (root) => {
-            const directory = app.vault.getAbstractFileByPath(root);
-            if (directory) await app.vault.delete(directory, true);
-            await app.plugins.enablePlugin("fragments");
-          }, libraryRoot);
+          await session.host.evaluate(
+            async ({ root, previousFolder }) => {
+              const directory = app.vault.getAbstractFileByPath(root);
+              if (directory) await app.vault.delete(directory, true);
+              await app.plugins.enablePlugin("fragments");
+              const plugin = app.plugins.plugins.fragments;
+              if (plugin && previousFolder) {
+                plugin.settings.folder = previousFolder;
+                await plugin.saveSettings?.();
+                await plugin.library.load();
+              }
+            },
+            { root: libraryRoot, previousFolder: session.previousFolder ?? "Fragments" },
+          );
           await session.openFragments();
         } finally {
           await session.browser.close();
