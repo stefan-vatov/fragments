@@ -375,10 +375,19 @@ function Preview({
       // of accumulating on the long-lived view.
       const component = new Component();
       let cancelled = false;
-      void MarkdownRenderer.render(plugin.app, body, staging, path, component).then(() => {
-        if (cancelled || !ref.current) return;
-        ref.current.replaceChildren(...staging.childNodes);
-      });
+      void MarkdownRenderer.render(plugin.app, body, staging, path, component)
+        .then(() => {
+          if (cancelled || !ref.current) return;
+          ref.current.replaceChildren(...staging.childNodes);
+        })
+        .catch(() => {
+          if (cancelled || !ref.current) return;
+          // A throwing post-processor or embed must not leave a blank pane.
+          const error = element.ownerDocument.createElement("p");
+          error.className = "fragments-preview-error";
+          error.textContent = "This fragment could not be previewed.";
+          ref.current.replaceChildren(error);
+        });
       return () => {
         cancelled = true;
         component.unload();
