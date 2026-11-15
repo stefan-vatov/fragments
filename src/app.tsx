@@ -673,6 +673,17 @@ function useFragmentMutations({
   // snapshot, so remember the intended value per path; otherwise two fast
   // clicks queue the same write instead of undoing each other.
   const starIntent = useRef(new Map<string, boolean>());
+  // The intent only bridges the gap between a click and the library re-reading
+  // the write. Once the library reflects it — or the path is gone — the intent
+  // must be dropped, or a later external change would be ignored.
+  useEffect(() => {
+    if (!starIntent.current.size) return;
+    const entries = library.entries();
+    for (const [path, desired] of starIntent.current) {
+      const entry = entries.find((item) => item.path === path);
+      if (!entry || entry.starred === desired) starIntent.current.delete(path);
+    }
+  });
   const toggleStar = async (): Promise<void> => {
     if (!selectedItem) return;
     const source = selectedItem.path;
