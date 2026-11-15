@@ -49,7 +49,12 @@ export class FragmentsView extends ItemView {
     this.closed = false;
     const queued = this.pending;
     this.pending = [];
-    for (const item of queued) void Promise.resolve(item.action(value)).then(item.resolve);
+    // A queued command that rejects (or throws) must still settle its caller;
+    // otherwise the awaiting command hangs and the rejection goes unhandled.
+    for (const item of queued)
+      void Promise.resolve()
+        .then(() => item.action(value))
+        .then(item.resolve, item.resolve);
   }
 
   private run(action: (shell: ShellHandle) => void | Promise<void>): Promise<void> {
