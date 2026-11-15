@@ -623,7 +623,9 @@ function useFragmentMutations({
 }: FragmentMutations) {
   const mutations = useRef<Promise<void>>(Promise.resolve());
   const captureFile = (path: string): TFile => {
-    const current = app.vault.getAbstractFileByPath(path);
+    // An external rename moves the file; the mutation addressed to the old path
+    // must land on the file that exists now.
+    const current = app.vault.getAbstractFileByPath(library.relocation(path) ?? path);
     if (current instanceof TFile) return current;
     const pending = [...(transitioning.get(path)?.keys() ?? [])].at(-1);
     if (pending) return pending;
@@ -684,9 +686,9 @@ function useFragmentMutations({
       errorNotice(error as Error);
     }
   };
-  const updateTags = async (value: string): Promise<void> => {
-    if (!selectedItem) return;
-    const source = selectedItem.path;
+  const updateTags = async (value: string, path?: string): Promise<void> => {
+    const source = path ?? selectedItem?.path;
+    if (!source) return;
     // Collapse repeats so "Work, work" stores one tag and renders one chip.
     const tags = [
       ...new Set(
@@ -1962,10 +1964,24 @@ function EditorPane() {
     reloadScratchpad,
   } = useScratchpad(library, library.scratchpadPath());
   const cancelTags = useRef(false);
-  useEffect(() => setEditingTags(false), [selectedItem?.path]);
-  const finishTags = (): void => {
-    if (!cancelTags.current) void updateTags(tagDraft);
+  // The fragment the open tag editor belongs to; a selection change must commit
+  // the draft to that fragment, not to the one replacing it.
+  const tagTarget = useRef<string | null>(null);
+  const previousPath = useRef<string | null>(selectedItem?.path ?? null);
+  useEffect(() => {
+    const path = selectedItem?.path ?? null;
+    if (previousPath.current === path) return;
+    previousPath.current = path;
+    if (tagTarget.current !== null && !cancelTags.current)
+      void updateTags(tagDraft, tagTarget.current);
+    tagTarget.current = null;
     cancelTags.current = false;
+    setEditingTags(false);
+  }, [selectedItem?.path]);
+  const finishTags = (): void => {
+    if (!cancelTags.current) void updateTags(tagDraft, tagTarget.current ?? selectedItem?.path);
+    cancelTags.current = false;
+    tagTarget.current = null;
     setEditingTags(false);
   };
   return (
@@ -2040,6 +2056,7 @@ function EditorPane() {
                       <button
                         onClick={() => {
                           setTagDraft(selectedItem.tags.join(", "));
+                          tagTarget.current = selectedItem.path;
                           setEditingTags(true);
                         }}
                       >
