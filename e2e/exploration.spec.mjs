@@ -545,7 +545,7 @@ test.fixme("a dirty draft in another window survives a trash there", async ({ ap
   }
 });
 
-test.fixme("a note ending at the frontmatter fence keeps a separator and a clean body", async ({
+test("a note ending at the frontmatter fence keeps a separator and a clean body", async ({
   app,
   session,
 }) => {

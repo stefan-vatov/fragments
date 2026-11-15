@@ -429,7 +429,15 @@ export class FragmentLibrary {
           // Reuse the separator the note already had. Adding one unconditionally
           // inserts a blank line into notes authored without it.
           const after = info.exists ? source.slice(info.contentStart) : "";
-          const separator = after.startsWith("\r\n") ? "\r\n" : after.startsWith("\n") ? "\n" : "";
+          // A file can end exactly at the closing fence with no newline; without
+          // a separator the new body would merge into that fence line.
+          const separator = after.startsWith("\r\n")
+            ? "\r\n"
+            : after.startsWith("\n")
+              ? "\n"
+              : info.exists && after.length === 0
+                ? "\n"
+                : "";
           return `${header}${separator}${body}`;
         }),
       );
