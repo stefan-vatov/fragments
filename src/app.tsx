@@ -310,9 +310,12 @@ function useDraft(
           saved(writing);
         })
         .catch((error: Error) => {
-          // The file behind the draft is gone: keep the text reachable.
-          if (library.fileStamp(writing.path) === undefined)
+          // The file behind the draft is gone: keep the text reachable, and let
+          // the recovery banner explain it instead of a "no longer available" toast.
+          if (library.fileStamp(writing.path) === undefined) {
             setRecovered({ path: writing.path, text: writing.text });
+            return;
+          }
           errorNotice(error);
           // Capped so a permanent conflict (external edit) does not loop forever.
           setSaveAttempt((current) => (current < 5 ? current + 1 : current));
@@ -333,13 +336,13 @@ function useDraft(
               // The file was deleted while the editor was open: surface the text
               // for recovery instead of stranding it under a dead path.
               setRecovered({ path: writing.path, text: writing.text });
-            } else {
-              failedDrafts.current.set(writing.path, {
-                text: writing.text,
-                expected: writing.expected,
-                stamp: library.fileStamp(writing.path),
-              });
+              return;
             }
+            failedDrafts.current.set(writing.path, {
+              text: writing.text,
+              expected: writing.expected,
+              stamp: library.fileStamp(writing.path),
+            });
             errorNotice(error);
           });
     },
@@ -359,6 +362,11 @@ function useDraft(
         if (notify) new Notice("Fragment saved");
       } catch (error) {
         if (!notify) throw error;
+        const failed = pendingDraft.current;
+        if (failed && library.fileStamp(failed.path) === undefined) {
+          setRecovered({ path: failed.path, text: failed.text });
+          return;
+        }
         errorNotice(error as Error);
       }
     },

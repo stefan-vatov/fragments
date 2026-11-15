@@ -1283,6 +1283,7 @@ test("renaming a collection folder while dirty keeps the draft recoverable", asy
       await app.fileManager.renameFile(folder, `${root}/Examples Renamed`);
     }, libraryRoot);
     await expect(app.getByRole("button", { name: "Copy draft", exact: true })).toBeVisible();
+    await expect(app.getByText("Fragment is no longer available.")).toHaveCount(0);
   } finally {
     await session.host.evaluate(async (root) => {
       const folder = app.vault.getAbstractFileByPath(`${root}/Examples Renamed`);
