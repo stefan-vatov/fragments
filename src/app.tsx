@@ -851,17 +851,18 @@ function useController({ plugin, view, handle }: Props) {
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [newCollection, setNewCollection] = useState("");
+  const { createCollection, collectionPending } = useCollectionCreate(
+    library,
+    setNewCollection,
+    setDialog,
+  );
   const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">(
     restored?.mobilePane ?? "list",
   );
   // Keep the serialised state current so a workspace restore sees the last view.
   usePersistedState(view, { selected, scope, query, tagFilter, sort, mode, mobilePane });
   const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
-  const selectedItem =
-    entries.find((item) => item.path === selected) ??
-    (selected
-      ? [...(transitioning.current.get(selected)?.values() ?? [])].at(-1)?.item
-      : undefined);
+  const selectedItem = pickSelected(entries, selected, transitioning.current);
   const draftState = useDraft(
     library,
     selectedItem?.path ?? null,
@@ -1051,11 +1052,53 @@ function useController({ plugin, view, handle }: Props) {
     setPaletteQuery,
     setPaletteIndex,
     setNewCollection,
+    createCollection,
+    collectionPending,
   };
 }
 
 type Controller = ReturnType<typeof useController>;
 const AppContext = createContext<Controller | null>(null);
+// The fragment being edited may sit behind a pending transition (a rename or
+// move already queued): fall back to the item carried by that transition.
+function pickSelected(
+  entries: Fragment[],
+  selected: string | null,
+  transitioning: FragmentTransitions,
+): Fragment | undefined {
+  return (
+    entries.find((item) => item.path === selected) ??
+    (selected ? [...(transitioning.get(selected)?.values() ?? [])].at(-1)?.item : undefined)
+  );
+}
+
+// The dialog's Enter key and a click can submit twice before the first
+// createCollection resolves; only the first request may create the folder.
+function useCollectionCreate(
+  library: FragmentLibrary,
+  setNewCollection: (value: string) => void,
+  setDialog: (value: Dialog) => void,
+) {
+  const [collectionPending, setCollectionPending] = useState(false);
+  const busy = useRef(false);
+  const createCollection = async (name: string): Promise<void> => {
+    if (busy.current) return;
+    busy.current = true;
+    setCollectionPending(true);
+    try {
+      await library.createCollection(name);
+      setNewCollection("");
+      setDialog(null);
+    } catch (error) {
+      errorNotice(error as Error);
+    } finally {
+      busy.current = false;
+      setCollectionPending(false);
+    }
+  };
+  return { createCollection, collectionPending };
+}
+
 function useAppContext(): Controller {
   const context = useContext(AppContext);
   if (!context) throw new Error("Fragments app context is missing.");
@@ -2156,7 +2199,8 @@ function Dialogs() {
     createFragment,
     newCollection,
     setNewCollection,
-    library,
+    createCollection,
+    collectionPending,
   } = useAppContext();
   const overlay = useRef<HTMLDialogElement>(null);
 
@@ -2240,13 +2284,7 @@ function Dialogs() {
               className="fragments-small-dialog"
               onSubmit={(event) => {
                 event.preventDefault();
-                void library
-                  .createCollection(newCollection)
-                  .then(() => {
-                    setNewCollection("");
-                    setDialog(null);
-                  })
-                  .catch(errorNotice);
+                void createCollection(newCollection);
               }}
             >
               <header>
@@ -2276,7 +2314,7 @@ function Dialogs() {
                   }
                 }}
               />
-              <button className="fragments-primary" type="submit">
+              <button className="fragments-primary" type="submit" disabled={collectionPending}>
                 Create collection
               </button>
             </form>
