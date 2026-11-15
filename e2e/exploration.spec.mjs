@@ -1368,7 +1368,7 @@ test.fixme("an over-long collection name reports failure in the dialog", async (
   await expect(dialog.getByRole("alert").or(dialog.locator(".notice")).first()).toBeVisible();
 });
 
-test.fixme("the advertised Ctrl+K shortcut opens the command palette", async ({ app }) => {
+test("the advertised Ctrl+K shortcut opens the command palette", async ({ app }) => {
   await app.getByRole("textbox", { name: "Fragment title", exact: true }).click();
   await app.keyboard.press("Control+k");
   await expect(app.getByRole("dialog", { name: "Command palette", exact: true })).toBeVisible();

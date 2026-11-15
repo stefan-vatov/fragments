@@ -147,6 +147,10 @@ function useKeyboard(
       if (event.target instanceof Node && !view.containerEl.contains(event.target)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        // Obsidian's own keymap listens on the bubble phase; claiming the key
+        // during capture keeps the advertised shortcut alive on Linux, where
+        // the editor's Mod+K binding would otherwise swallow it.
+        event.stopPropagation();
         setDialog("palette");
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -156,8 +160,10 @@ function useKeyboard(
       }
       if (event.key === "Escape") setDialog(null);
     };
-    doc.addEventListener("keydown", onKey);
-    return () => doc.removeEventListener("keydown", onKey);
+    // Capture on the document so the shortcut is seen before the host app's
+    // bubble-phase hotkeys; the containment check still scopes it to the view.
+    doc.addEventListener("keydown", onKey, true);
+    return () => doc.removeEventListener("keydown", onKey, true);
   }, [save, setDialog, view]);
 }
 
