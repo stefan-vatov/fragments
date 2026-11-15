@@ -123,6 +123,11 @@ export default class FragmentsPlugin extends Plugin {
   onunload(): void {
     this.unloaded = true;
     this.library.cancel();
+    // Queued commands cannot run once the plugin unloads: settle them so the
+    // draft flush below cannot wait forever and the leaves detach promptly.
+    for (const leaf of this.app.workspace.getLeavesOfType(FRAGMENTS_VIEW)) {
+      if (leaf.view instanceof FragmentsView) leaf.view.abortPending();
+    }
     // Detaching the leaves unmounts the editors; persist their drafts first so
     // the last <=700 ms of typing is not lost on quit or plugin reload.
     void this.flushDrafts()

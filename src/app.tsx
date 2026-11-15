@@ -74,6 +74,8 @@ const age = (modified: number): string => {
 
 // A coarse clock for everything rendered from Date.now(): relative ages and the
 // Recent cutoff would otherwise freeze until an unrelated library event.
+const SHORTCUT = Platform.isMacOS ? "⌘K" : "Ctrl K";
+
 const useNow = (interval = 60_000): number => {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -833,9 +835,8 @@ function usePersistedState(
 
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
-  const revision = useSyncExternalStore(library.subscribe, library.snapshot);
   const now = useNow();
-  const entries = useMemo(() => library.entries(), [library, revision]);
+  const entries = useEntries(library);
   const restored = useRestoredState(view);
   const [scope, setScope] = useState<SearchScope>(restored?.scope ?? { kind: "all" });
   const [selected, setSelected] = useState<string | null>(restored?.selected ?? null);
@@ -861,7 +862,6 @@ function useController({ plugin, view, handle }: Props) {
   );
   // Keep the serialised state current so a workspace restore sees the last view.
   usePersistedState(view, { selected, scope, query, tagFilter, sort, mode, mobilePane });
-  const shortcut = Platform.isMacOS ? "⌘K" : "Ctrl K";
   const selectedItem = pickSelected(entries, selected, transitioning.current);
   const draftState = useDraft(
     library,
@@ -1018,7 +1018,7 @@ function useController({ plugin, view, handle }: Props) {
     paletteIndex,
     newCollection,
     mobilePane,
-    shortcut,
+    shortcut: SHORTCUT,
     selectedItem: creating ? undefined : selectedItem,
     body,
     draft,
@@ -1059,6 +1059,12 @@ function useController({ plugin, view, handle }: Props) {
 
 type Controller = ReturnType<typeof useController>;
 const AppContext = createContext<Controller | null>(null);
+// The library's revision signal re-reads the fragment list for the controller.
+function useEntries(library: FragmentLibrary): Fragment[] {
+  const revision = useSyncExternalStore(library.subscribe, library.snapshot);
+  return useMemo(() => library.entries(), [library, revision]);
+}
+
 // The fragment being edited may sit behind a pending transition (a rename or
 // move already queued): fall back to the item carried by that transition.
 function pickSelected(

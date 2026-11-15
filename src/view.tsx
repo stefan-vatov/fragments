@@ -34,6 +34,7 @@ export class FragmentsView extends ItemView {
   private shell: ShellHandle | null = null;
   private snapshot: FragmentsViewState | null = null;
   private scratchOpen = true;
+  private closed = false;
   // Commands can run before the first React commit installs the shell; keep
   // their intent instead of dropping it.
   private pending: Array<{
@@ -50,8 +51,20 @@ export class FragmentsView extends ItemView {
   }
 
   private run(action: (shell: ShellHandle) => void | Promise<void>): Promise<void> {
+    if (this.closed) return Promise.resolve();
     if (this.shell) return Promise.resolve(action(this.shell));
     return new Promise((resolve) => this.pending.push({ action, resolve }));
+  }
+
+  // The plugin is unloading: a queued command can never run, so settle it
+  // instead of leaving onunload's draft flush waiting forever. A committed
+  // shell can still flush its draft, so its queue is left alone.
+  abortPending(): void {
+    if (this.shell) return;
+    this.closed = true;
+    const queued = this.pending;
+    this.pending = [];
+    for (const item of queued) item.resolve();
   }
 
   constructor(
@@ -141,8 +154,7 @@ export class FragmentsView extends ItemView {
     this.root = undefined;
     this.install(null);
     // A command aimed at a closed view resolves without acting.
-    for (const item of this.pending) item.resolve();
-    this.pending = [];
+    this.abortPending();
   }
 
   async createFragment(): Promise<void> {
