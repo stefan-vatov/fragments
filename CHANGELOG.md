@@ -1,3 +1,9 @@
+## [1.6.1](https://github.com/stefan-vatov/fragments/compare/1.6.0...1.6.1) (2026-11-15)
+
+### Bug Fixes
+
+- preserve drafts and app windows through UI transitions ([4126daa](https://github.com/stefan-vatov/fragments/commit/4126daaf7bd938691d32fde7a5776868f395c849))
+
 # [1.6.0](https://github.com/stefan-vatov/fragments/compare/1.5.7...1.6.0) (2026-11-15)
 
 ### Bug Fixes
