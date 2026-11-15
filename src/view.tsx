@@ -7,6 +7,21 @@ import type { SearchScope } from "./search";
 
 export const FRAGMENTS_VIEW = "fragments-view";
 
+// Obsidian stores the view state in the workspace file, where it can be edited
+// by hand or written by an older version: validate it instead of trusting its
+// shape. A traversal segment in a collection scope would let "New fragment"
+// create folders outside the library root.
+function restoredScope(scope: SearchScope | undefined): SearchScope {
+  if (scope?.kind === "starred" || scope?.kind === "recent") return { kind: scope.kind };
+  if (scope?.kind === "tag") return { kind: "tag", value: scope.value ?? "" };
+  if (scope?.kind === "collection") {
+    const segments = (scope.value ?? "").split("/").map((segment) => segment.trim());
+    if (segments.length && segments.every((part) => part && part !== "." && part !== ".."))
+      return { kind: "collection", value: segments.join("/") };
+  }
+  return { kind: "all" };
+}
+
 // The part of the UI Obsidian restores with the leaf: which fragment is open,
 // the active filters, the view mode and the pad's visibility.
 export interface FragmentsViewState {
@@ -113,7 +128,7 @@ export class FragmentsView extends ItemView {
     this.snapshot = stored
       ? {
           selected: stored.selected ?? null,
-          scope: stored.scope ?? { kind: "all" },
+          scope: restoredScope(stored.scope),
           query: stored.query ?? "",
           tagFilter: stored.tagFilter ?? "",
           sort: stored.sort === "name" ? "name" : "recent",

@@ -711,6 +711,10 @@ export class FragmentLibrary {
 
   private async ensureFolder(path: string): Promise<void> {
     const parts = path.split("/");
+    // A "." or ".." segment escapes the library root once it reaches the vault
+    // API; reject it here as the last line of defence.
+    if (parts.some((part) => part === "." || part === ".."))
+      throw new Error("Collection names cannot contain “.” or “..” segments.");
     for (let count = 1; count <= parts.length; count++) {
       const part = parts.slice(0, count).join("/");
       if (!this.app.vault.getAbstractFileByPath(part)) {
