@@ -1263,3 +1263,25 @@
     background: Canvas;
   }
 }
+
+/* A recuperated draft sits above the editor until it is copied or dismissed. */
+.fragments-recovered {
+  display: grid;
+  gap: 8px;
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.fragments-recovered textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.fragments-recovered-actions {
+  display: flex;
+  gap: 8px;
+}

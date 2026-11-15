@@ -55,6 +55,7 @@ interface Props {
 }
 
 type Dialog = "palette" | "collection" | null;
+type MobilePane = "nav" | "list" | "editor";
 
 const labelScope = (scope: SearchScope): string => {
   if (scope.kind === "starred") return "Starred";
@@ -168,6 +169,7 @@ function useDraft(
   const [saveAttempt, setSaveAttempt] = useState(0);
   const [readFailed, setReadFailed] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
+  const [recovered, setRecovered] = useState<{ path: string; text: string } | null>(null);
   const pendingDraft = useRef<PendingDraft | null>(null);
   // A draft whose save failed must survive the owner change that follows a
   // switch; the path plus the file stamp identify the file it belongs to.
@@ -266,6 +268,9 @@ function useDraft(
           saved(writing);
         })
         .catch((error: Error) => {
+          // The file behind the draft is gone: keep the text reachable.
+          if (library.fileStamp(writing.path) === undefined)
+            setRecovered({ path: writing.path, text: writing.text });
           errorNotice(error);
           // Capped so a permanent conflict (external edit) does not loop forever.
           setSaveAttempt((current) => (current < 5 ? current + 1 : current));
@@ -282,11 +287,17 @@ function useDraft(
           .saveBody(writing.path, writing.text, writing.expected)
           .then(() => saved(writing))
           .catch((error: Error) => {
-            failedDrafts.current.set(writing.path, {
-              text: writing.text,
-              expected: writing.expected,
-              stamp: library.fileStamp(writing.path),
-            });
+            if (library.fileStamp(writing.path) === undefined) {
+              // The file was deleted while the editor was open: surface the text
+              // for recovery instead of stranding it under a dead path.
+              setRecovered({ path: writing.path, text: writing.text });
+            } else {
+              failedDrafts.current.set(writing.path, {
+                text: writing.text,
+                expected: writing.expected,
+                stamp: library.fileStamp(writing.path),
+              });
+            }
             errorNotice(error);
           });
     },
@@ -319,7 +330,20 @@ function useDraft(
     setBuffer({ owner, body, draft: text, dirty: true });
   };
 
-  return { body, draft, dirty, ready, readFailed, retryRead, save, edit };
+  const dismissRecovered = useCallback((): void => setRecovered(null), []);
+
+  return {
+    body,
+    draft,
+    dirty,
+    ready,
+    readFailed,
+    retryRead,
+    save,
+    edit,
+    recovered,
+    dismissRecovered,
+  };
 }
 
 function Preview({
@@ -835,8 +859,7 @@ function usePersistedState(
 
 function useController({ plugin, view, handle }: Props) {
   const library = plugin.library;
-  const now = useNow();
-  const entries = useEntries(library);
+  const { entries, now } = useEntries(library);
   const restored = useRestoredState(view);
   const [scope, setScope] = useState<SearchScope>(restored?.scope ?? { kind: "all" });
   const [selected, setSelected] = useState<string | null>(restored?.selected ?? null);
@@ -857,9 +880,7 @@ function useController({ plugin, view, handle }: Props) {
     setNewCollection,
     setDialog,
   );
-  const [mobilePane, setMobilePane] = useState<"nav" | "list" | "editor">(
-    restored?.mobilePane ?? "list",
-  );
+  const [mobilePane, setMobilePane] = useState<MobilePane>(restored?.mobilePane ?? "list");
   // Keep the serialised state current so a workspace restore sees the last view.
   usePersistedState(view, { selected, scope, query, tagFilter, sort, mode, mobilePane });
   const selectedItem = pickSelected(entries, selected, transitioning.current);
@@ -870,6 +891,7 @@ function useController({ plugin, view, handle }: Props) {
     creationRevision,
   );
   const { body, draft, dirty, ready: draftReady, save, edit } = draftState;
+  const { recovered, dismissRecovered } = draftState;
   const { toggleStar, updateTags, rename, move, trash, waitForMutations } = useFragmentMutations({
     app: plugin.app,
     library,
@@ -1024,6 +1046,8 @@ function useController({ plugin, view, handle }: Props) {
     draft,
     dirty,
     draftReady,
+    recovered,
+    dismissRecovered,
     readFailed: draftState.readFailed,
     retryRead: draftState.retryRead,
     tags,
@@ -1060,9 +1084,10 @@ function useController({ plugin, view, handle }: Props) {
 type Controller = ReturnType<typeof useController>;
 const AppContext = createContext<Controller | null>(null);
 // The library's revision signal re-reads the fragment list for the controller.
-function useEntries(library: FragmentLibrary): Fragment[] {
+function useEntries(library: FragmentLibrary) {
   const revision = useSyncExternalStore(library.subscribe, library.snapshot);
-  return useMemo(() => library.entries(), [library, revision]);
+  const now = useNow();
+  return { entries: useMemo(() => library.entries(), [library, revision]), now };
 }
 
 // The fragment being edited may sit behind a pending transition (a rename or
@@ -2009,6 +2034,8 @@ function EditorPane() {
     plugin,
     createFragment,
     creating,
+    recovered,
+    dismissRecovered,
   } = useAppContext();
   const [editingTags, setEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -2050,6 +2077,7 @@ function EditorPane() {
         className={`fragments-editor-pane ${mobilePane === "editor" ? "mobile-active" : ""}`}
         aria-busy={creating}
       >
+        {recovered && <RecoveredDraft text={recovered.text} onDismiss={dismissRecovered} />}
         <EditorToolbar
           scratchOpen={scratchOpen}
           toggleScratchpad={() => {
@@ -2189,6 +2217,25 @@ function EditorPane() {
         )}
       </main>
     </>
+  );
+}
+
+// A draft whose file disappeared stays on screen until the user copies it out
+// or dismisses it, instead of vanishing with the deleted fragment.
+function RecoveredDraft({ text, onDismiss }: { text: string; onDismiss: () => void }) {
+  return (
+    <div className="fragments-recovered" role="status">
+      <p>A deleted fragment’s unsaved draft was kept.</p>
+      <textarea aria-label="Recovered draft" readOnly value={text} />
+      <div className="fragments-recovered-actions">
+        <button type="button" onClick={() => void navigator.clipboard?.writeText(text)}>
+          Copy draft
+        </button>
+        <button type="button" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
 
