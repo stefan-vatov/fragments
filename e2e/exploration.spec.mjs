@@ -1359,7 +1359,7 @@ test("clearing the title does not report Saved for an unpersisted state", async 
   await expect(app.getByRole("button", { name: "Saved", exact: true })).toHaveCount(0);
 });
 
-test.fixme("an over-long collection name reports failure in the dialog", async ({ app }) => {
+test("an over-long collection name reports failure in the dialog", async ({ app }) => {
   await app.getByRole("button", { name: "New collection", exact: true }).click();
   const dialog = app.getByRole("dialog", { name: "New collection", exact: true });
   const name = dialog.getByRole("textbox", { name: "Collection name", exact: true });

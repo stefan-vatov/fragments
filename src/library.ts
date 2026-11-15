@@ -542,6 +542,10 @@ export class FragmentLibrary {
       throw new Error("Collection names cannot contain “.” or “..” segments.");
     const path = segments.join("/");
     if (!path) throw new Error("Enter a collection name.");
+    // A folder name has the same filesystem byte limit as a file name; check it
+    // here so the dialog can explain the refusal instead of surfacing ENAMETOOLONG.
+    if (segments.some((segment) => utf8Length(segment) > 200))
+      throw new Error("Collection names must be 200 characters or fewer per folder.");
     const target = `${this.folder()}/${path}`;
     // ensureFolder skips every existing path, including files, so a name that
     // collides with a note (or the scratchpad) would silently do nothing.

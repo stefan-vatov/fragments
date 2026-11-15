@@ -925,11 +925,8 @@ function useController({ plugin, view, handle }: Props) {
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [newCollection, setNewCollection] = useState("");
-  const { createCollection, collectionPending } = useCollectionCreate(
-    library,
-    setNewCollection,
-    setDialog,
-  );
+  const { createCollection, collectionPending, collectionError, resetCollectionError } =
+    useCollectionCreate(library, setNewCollection, setDialog);
   const [mobilePane, setMobilePane] = useState<MobilePane>(restored?.mobilePane ?? "list");
   // Keep the serialised state current so a workspace restore sees the last view.
   usePersistedState(view, { selected, scope, query, tagFilter, sort, mode, mobilePane });
@@ -1023,14 +1020,13 @@ function useController({ plugin, view, handle }: Props) {
 
   useKeyboard(view, save, setDialog);
 
-  useEffect(() => {
-    if (dialog === "palette") {
-      setPaletteQuery("");
-      setPaletteIndex(0);
-    }
-    // A previously abandoned name must not reappear when the dialog reopens.
-    if (dialog === "collection") setNewCollection("");
-  }, [dialog]);
+  useDialogStateReset(
+    dialog,
+    setPaletteQuery,
+    setPaletteIndex,
+    setNewCollection,
+    resetCollectionError,
+  );
 
   const selectScope = (next: SearchScope): void => {
     setScope(next);
@@ -1133,6 +1129,7 @@ function useController({ plugin, view, handle }: Props) {
     setNewCollection,
     createCollection,
     collectionPending,
+    collectionError,
   };
 }
 
@@ -1160,29 +1157,55 @@ function pickSelected(
 
 // The dialog's Enter key and a click can submit twice before the first
 // createCollection resolves; only the first request may create the folder.
+// Reopening a dialog must start from a clean slate: a palette query or an
+// abandoned collection name from last time would otherwise reappear.
+function useDialogStateReset(
+  dialog: Dialog,
+  setPaletteQuery: (value: string) => void,
+  setPaletteIndex: (value: number) => void,
+  setNewCollection: (value: string) => void,
+  resetCollectionError: () => void,
+): void {
+  useEffect(() => {
+    if (dialog === "palette") {
+      setPaletteQuery("");
+      setPaletteIndex(0);
+    }
+    if (dialog === "collection") {
+      setNewCollection("");
+      resetCollectionError();
+    }
+  }, [dialog, resetCollectionError, setNewCollection, setPaletteIndex, setPaletteQuery]);
+}
+
 function useCollectionCreate(
   library: FragmentLibrary,
   setNewCollection: (value: string) => void,
   setDialog: (value: Dialog) => void,
 ) {
   const [collectionPending, setCollectionPending] = useState(false);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
   const busy = useRef(false);
+  const resetCollectionError = useCallback((): void => setCollectionError(null), []);
   const createCollection = async (name: string): Promise<void> => {
     if (busy.current) return;
     busy.current = true;
     setCollectionPending(true);
+    setCollectionError(null);
     try {
       await library.createCollection(name);
       setNewCollection("");
       setDialog(null);
     } catch (error) {
-      errorNotice(error as Error);
+      // The dialog stays open, so the reason belongs next to the field rather
+      // than in a notice the user can miss.
+      setCollectionError(error instanceof Error ? error.message : String(error));
     } finally {
       busy.current = false;
       setCollectionPending(false);
     }
   };
-  return { createCollection, collectionPending };
+  return { createCollection, collectionPending, collectionError, resetCollectionError };
 }
 
 function useAppContext(): Controller {
@@ -2322,6 +2345,7 @@ function Dialogs() {
     setNewCollection,
     createCollection,
     collectionPending,
+    collectionError,
   } = useAppContext();
   const overlay = useRef<HTMLDialogElement>(null);
 
@@ -2433,6 +2457,11 @@ function Dialogs() {
                   }
                 }}
               />
+              {collectionError && (
+                <p className="fragments-dialog-error" role="alert">
+                  {collectionError}
+                </p>
+              )}
               <button className="fragments-primary" type="submit" disabled={collectionPending}>
                 Create collection
               </button>
