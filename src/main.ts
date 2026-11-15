@@ -88,7 +88,12 @@ export default class FragmentsPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
         // A folder rename arrives as one event with no per-descendant events,
-        // so evict the whole old subtree and rebuild under the new path.
+        // so evict the whole old subtree and rebuild under the new path. The
+        // moved paths must be remembered before remove() prunes the subtree.
+        const moved = this.library
+          .entries()
+          .filter((entry) => entry.path === oldPath || entry.path.startsWith(`${oldPath}/`))
+          .map((entry) => [entry.path, `${file.path}${entry.path.slice(oldPath.length)}`] as const);
         this.library.remove(oldPath);
         if (file instanceof TFile) {
           // The open draft still writes to the old path: point it at the new
@@ -100,16 +105,19 @@ export default class FragmentsPlugin extends Plugin {
           return;
         }
         if (!(file instanceof TFolder)) return;
-        // Renaming the library root (or a folder above it) would otherwise
-        // leave the setting on a path that no longer exists: the library
-        // indexes nothing and every save fails. Re-point it and persist.
+        // Pending drafts addressed to the old paths must land on the moved
+        // files; record the moves before the reload clears them, then carry
+        // them through load() so the selection follows too.
+        for (const [from, to] of moved) this.library.relocate(from, to);
         const root = this.library.folder();
         if (oldPath === root || root.startsWith(`${oldPath}/`)) {
           this.settings.folder = `${file.path}${root.slice(oldPath.length)}`;
-          void this.saveSettings().then(() => this.library.load());
+          void this.saveSettings().then(() => this.library.load(moved));
           return;
         }
-        void this.library.load();
+        void this.flushDrafts()
+          .catch(() => undefined)
+          .then(() => this.library.load(moved));
       }),
     );
     this.registerEvent(

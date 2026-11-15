@@ -244,11 +244,13 @@ export class FragmentLibrary {
     this.generation += 1;
   };
 
-  async load(): Promise<void> {
+  async load(carry?: ReadonlyArray<readonly [string, string]>): Promise<void> {
     const generation = ++this.generation;
     // Paths are rebuilt from scratch; stale moves from a previous folder or
-    // session must not redirect writes.
+    // session must not redirect writes. A caller that knows the files moved
+    // (an external folder rename) hands their new locations back in.
     this.relocations.clear();
+    for (const [from, to] of carry ?? []) this.relocations.set(from, to);
     // A saved setting may predate this canonicalisation (or the folder may
     // have been renamed with different case). Adopt the vault's casing when an
     // existing folder matches, so the library never silently empties.
