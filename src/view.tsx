@@ -45,6 +45,8 @@ export class FragmentsView extends ItemView {
   private install(value: ShellHandle | null): void {
     this.shell = value;
     if (!value) return;
+    // A remounted root can accept commands again after an abort.
+    this.closed = false;
     const queued = this.pending;
     this.pending = [];
     for (const item of queued) void Promise.resolve(item.action(value)).then(item.resolve);
@@ -119,6 +121,14 @@ export class FragmentsView extends ItemView {
         }
       : null;
     this.scratchOpen = stored?.scratchOpen ?? true;
+    // Obsidian can apply state to a leaf that is already open (a layout reapply
+    // or a move between windows). The controller reads the snapshot at mount,
+    // so remount to adopt the state the leaf just received.
+    if (this.root) {
+      this.root.unmount();
+      this.root = undefined;
+      this.mount();
+    }
   }
 
   readState(): FragmentsViewState | null {
@@ -138,15 +148,19 @@ export class FragmentsView extends ItemView {
     if (this.snapshot) this.snapshot = { ...this.snapshot, scratchOpen: open };
   }
 
-  async onOpen(): Promise<void> {
-    this.contentEl.empty();
-    this.contentEl.addClass("fragments-host");
+  private mount(): void {
     this.root = createRoot(this.contentEl);
     this.root.render(
       <ErrorBoundary>
         <AppShell plugin={this.plugin} view={this} handle={(value) => this.install(value)} />
       </ErrorBoundary>,
     );
+  }
+
+  async onOpen(): Promise<void> {
+    this.contentEl.empty();
+    this.contentEl.addClass("fragments-host");
+    this.mount();
   }
 
   async onClose(): Promise<void> {
