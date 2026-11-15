@@ -1327,10 +1327,7 @@ test("notes without frontmatter are indexed and saved as body text", async ({ ap
 
 // Known defects found by exploratory testing on 2026-11-15. Enable each test
 // together with its fix so the regression stays pinned.
-test.fixme("save-conflict feedback is visible in the Fragments window", async ({
-  app,
-  session,
-}) => {
+test("save-conflict feedback is visible in the Fragments window", async ({ app, session }) => {
   await choose(app, "Playwright conflict");
   const path = `${libraryRoot}/Conflict.md`;
   await editor(app).fill("Local draft while the file changes outside.");

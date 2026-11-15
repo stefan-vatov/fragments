@@ -30,6 +30,7 @@
   /* A short leaf must shrink and scroll internally instead of clipping its
      controls behind the host's overflow: hidden. */
   min-height: 0;
+  position: relative;
   background: var(--frag-bg);
   color: var(--frag-text);
   font:
@@ -39,6 +40,24 @@
 }
 .fragments-app * {
   box-sizing: border-box;
+}
+.fragments-error-notice {
+  position: absolute;
+  inset-inline: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--frag-danger, #e5534b);
+  border-radius: 8px;
+  background: var(--frag-panel);
+  color: var(--frag-text);
+  box-shadow: 0 6px 24px #0008;
+}
+.fragments-error-notice span {
+  flex: 1;
 }
 .fragments-app ::selection {
   background: #f0a50088;

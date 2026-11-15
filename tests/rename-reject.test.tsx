@@ -5,7 +5,6 @@ import { AppShell } from "../src/app";
 import { FragmentLibrary } from "../src/library";
 import type FragmentsPlugin from "../src/main";
 import type { FragmentsView } from "../src/view";
-import { notices } from "./obsidian-stub";
 import { createTestVault } from "./vault";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,7 +34,6 @@ describe("rejected rename", () => {
   it("restores the title input when the rename is refused", async () => {
     globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
     document.body.replaceChildren();
-    notices.length = 0;
 
     const { app, files, addFile } = createTestVault();
     addFile("Fragments/Alpha.md", note("Alpha"), 2_000);
@@ -69,7 +67,9 @@ describe("rejected rename", () => {
     await setTitle(input!, "_fragments-scratchpad");
 
     expect(titleInput(host)?.value).toBe("Alpha");
-    expect(notices).toContain("That title is reserved for the scratchpad.");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "That title is reserved for the scratchpad.",
+    );
     expect(files.get("Fragments/Alpha.md")?.text).toContain('title: "Alpha"');
     expect(files.get("Fragments/Beta.md")?.text).toContain('title: "Beta"');
   });

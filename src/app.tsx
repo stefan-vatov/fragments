@@ -97,9 +97,35 @@ const useNow = (interval = 60_000): number => {
 const windowOf = (view: FragmentsView): Window =>
   view.containerEl.ownerDocument.defaultView ?? window;
 
+type ErrorSink = (message: string) => void;
+// Notices created by Obsidian belong to the host window, but the user may be
+// working in a popout. Mounted views register a sink so the error renders
+// beside the editor; the host Notice stays as the fallback when no view is up.
+const errorSinks = new Set<ErrorSink>();
 const errorNotice = (error: Error): void => {
+  if (errorSinks.size > 0) {
+    for (const sink of errorSinks) sink(error.message);
+    return;
+  }
   new Notice(error.message);
 };
+
+function useInViewErrors() {
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const sink: ErrorSink = (next) => setMessage(next);
+    errorSinks.add(sink);
+    return () => {
+      errorSinks.delete(sink);
+    };
+  }, []);
+  useEffect(() => {
+    if (!message) return undefined;
+    const timer = window.setTimeout(() => setMessage(null), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+  return { message, dismiss: useCallback(() => setMessage(null), []) };
+}
 
 function countTags(entries: Fragment[]): [string, number][] {
   const counts = new Map<string, number>();
@@ -1189,6 +1215,7 @@ export function AppShell(props: Props) {
   useSyncExternalStore(props.plugin.subscribeSettings, props.plugin.settingsSnapshot);
   const controller = useController(props);
   const narrow = useNarrowLayout(props.view);
+  const errors = useInViewErrors();
   usePaneFocus(controller.mobilePane, props.view, narrow);
   const style = {
     "--frag-snippet-font": snippetFontFamily(controller.plugin.settings),
@@ -1201,6 +1228,14 @@ export function AppShell(props: Props) {
         <ListPane />
         <EditorPane />
         <Dialogs />
+        {errors.message && (
+          <div className="fragments-error-notice" role="alert">
+            <span>{errors.message}</span>
+            <button type="button" aria-label="Dismiss error" onClick={errors.dismiss}>
+              <X size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </AppContext.Provider>
   );
