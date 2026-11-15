@@ -160,10 +160,21 @@ function useKeyboard(
       }
       if (event.key === "Escape") setDialog(null);
     };
-    // Capture on the document so the shortcut is seen before the host app's
-    // bubble-phase hotkeys; the containment check still scopes it to the view.
-    doc.addEventListener("keydown", onKey, true);
-    return () => doc.removeEventListener("keydown", onKey, true);
+    // Obsidian's keymap consumes Ctrl+K at window capture on Linux, so the
+    // document never sees it. Listen at the same phase; the host has already
+    // run preventDefault, but the event still reaches a later window listener.
+    const listener = onKey as EventListener;
+    const windowTarget = doc.defaultView;
+    try {
+      if (windowTarget) {
+        windowTarget.addEventListener("keydown", listener, true);
+        return () => windowTarget.removeEventListener("keydown", listener, true);
+      }
+    } catch {
+      // A view facade in tests may expose a window without listener methods.
+    }
+    doc.addEventListener("keydown", listener, true);
+    return () => doc.removeEventListener("keydown", listener, true);
   }, [save, setDialog, view]);
 }
 
