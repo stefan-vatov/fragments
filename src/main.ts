@@ -177,8 +177,12 @@ export default class FragmentsPlugin extends Plugin {
       const leaf = this.prepareLeaf(leaves, !reveal);
       if (!(leaf.view instanceof FragmentsView))
         await leaf.setViewState({ type: FRAGMENTS_VIEW, active: reveal });
-      if (reveal) await workspace.revealLeaf(leaf);
-      for (const duplicate of leaves) if (duplicate !== leaf) duplicate.detach();
+      if (reveal) {
+        await workspace.revealLeaf(leaf);
+        // Only an explicit open collapses duplicates; a restored workspace
+        // keeps the leaves the user deliberately placed in several windows.
+        for (const duplicate of leaves) if (duplicate !== leaf) duplicate.detach();
+      }
       return leaf;
     } catch {
       new Notice("Fragments could not open.");
