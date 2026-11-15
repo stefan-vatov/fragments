@@ -1,3 +1,20 @@
+## [1.6.2](https://github.com/stefan-vatov/fragments/compare/1.6.1...1.6.2) (2026-11-15)
+
+### Bug Fixes
+
+- avoid a no-longer-available error while recovering ([16c27ba](https://github.com/stefan-vatov/fragments/commit/16c27ba6bf44626d118fa6f43b96a491609431da))
+- avoid misleading errors when a draft is recoverable ([3dd3fe3](https://github.com/stefan-vatov/fragments/commit/3dd3fe362719e2d2fe48968591ae3270b3bff3d3))
+- catch the host-consumed ctrl+k at window capture ([3ec95b9](https://github.com/stefan-vatov/fragments/commit/3ec95b9247caaf74e67b2d221086df19eeaccc55))
+- flush a pending title before changing collection ([29bdc99](https://github.com/stefan-vatov/fragments/commit/29bdc9942747441ddc9c5f49f7f67aca0e4f52d0))
+- keep a draft when another window trashes the note ([ea1fba3](https://github.com/stefan-vatov/fragments/commit/ea1fba33a8d80f6a0b21698533f391e9f6ebebb4))
+- keep a newline after an empty frontmatter fence ([d141e08](https://github.com/stefan-vatov/fragments/commit/d141e0875d5d1d630582b94dbf61af3d7f9100a3))
+- open the command palette with ctrl+k ([dacb78a](https://github.com/stefan-vatov/fragments/commit/dacb78aa39aeede13a411a1fb14521b4c6927fa2))
+- reject over-long fragment titles ([f49d9ab](https://github.com/stefan-vatov/fragments/commit/f49d9abffb59b6dbec9cc329860ea7245f93b06e))
+- reject stale drafts from another window ([8611d43](https://github.com/stefan-vatov/fragments/commit/8611d4354d3038f5dda5525f2cc4e19239b756ae))
+- report over-long collection names in the dialog ([6fefe39](https://github.com/stefan-vatov/fragments/commit/6fefe39b1001742dab01d9b719aeaafbc96d9998))
+- report rejected title edits instead of saved ([793b17c](https://github.com/stefan-vatov/fragments/commit/793b17caffac698eda3aa7a6dda0ec155eac35f5))
+- show errors inside the fragments view ([a3ca8c6](https://github.com/stefan-vatov/fragments/commit/a3ca8c64065be9127693cf016e65061bf1bfa5e0))
+
 ## [1.6.1](https://github.com/stefan-vatov/fragments/compare/1.6.0...1.6.1) (2026-11-15)
 
 ### Bug Fixes
