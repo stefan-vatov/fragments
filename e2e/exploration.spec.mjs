@@ -441,9 +441,13 @@ test("a stale second window cannot overwrite a newer save", async ({ app, sessio
   try {
     await choose(app, "XWindow");
     await choose(other, "XWindow");
-    await editor(app).fill("A TEXT WINS");
-    await expect.poll(() => readNote(disk(session, "XWindow.md"))).toContain("A TEXT WINS");
+    // B drafts against the seed body first; A then saves a newer version. Only
+    // this ordering leaves B with a genuinely stale baseline (a clean B would
+    // refresh to A's text before typing and its save would be legitimate).
     await editor(other).fill("B TEXT OVERWRITES");
+    await editor(app).fill("A TEXT WINS");
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect.poll(() => readNote(disk(session, "XWindow.md"))).toContain("A TEXT WINS");
     await other.waitForTimeout(1500);
     await expect.poll(() => readNote(disk(session, "XWindow.md"))).toContain("A TEXT WINS");
     await expect
