@@ -294,7 +294,7 @@ function useDraft(
       const writing = pendingDraft.current;
       if (!writing || writing.owner !== owner || writing.text !== draft) return;
       void library
-        .saveBody(writing.path, writing.text, writing.expected)
+        .saveBody(writing.path, writing.text, writing.expected, writing.owner)
         .then(() => {
           setSaveAttempt(0);
           saved(writing);
@@ -316,7 +316,7 @@ function useDraft(
       const writing = pendingDraft.current;
       if (writing?.owner === owner)
         void library
-          .saveBody(writing.path, writing.text, writing.expected)
+          .saveBody(writing.path, writing.text, writing.expected, writing.owner)
           .then(() => saved(writing))
           .catch((error: Error) => {
             if (library.fileStamp(writing.path) === undefined) {
@@ -342,7 +342,7 @@ function useDraft(
       if (!writing || writing.owner !== owner) return;
       try {
         while (writing?.owner === owner) {
-          await library.saveBody(writing.path, writing.text, writing.expected);
+          await library.saveBody(writing.path, writing.text, writing.expected, writing.owner);
           saved(writing);
           writing = pendingDraft.current;
         }

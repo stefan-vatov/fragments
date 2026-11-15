@@ -27,6 +27,11 @@ export class TitleWriteError extends Error {
   }
 }
 
+/** The editing buffer that produced a body write; identifies who owns a queued save. */
+export interface DraftIdentity {
+  readonly path: string | null;
+}
+
 export class ScratchpadConflictError extends Error {
   constructor() {
     super(
@@ -162,7 +167,10 @@ export class FragmentLibrary {
   private revision = 0;
   private generation = 0;
   private readonly pending = new Map<string, Promise<void>>();
-  private readonly written = new Map<string, string>();
+  // The body last written per path, tagged with the draft that wrote it. A
+  // second window's snapshot shares this library instance, so the body alone
+  // cannot distinguish our own queued write from a newer save elsewhere.
+  private readonly written = new Map<string, { body: string; owner?: DraftIdentity }>();
   private collectionsCache: { revision: number; names: string[] } | null = null;
   private folderExistsCache: { revision: number; exists: boolean } | null = null;
   private readonly reads = new Map<string, number>();
@@ -388,7 +396,12 @@ export class FragmentLibrary {
     return path;
   }
 
-  async saveBody(path: string, body: string, expectedBody?: string): Promise<void> {
+  async saveBody(
+    path: string,
+    body: string,
+    expectedBody?: string,
+    owner?: DraftIdentity,
+  ): Promise<void> {
     await this.queue(path, async () => {
       const file = this.file(path);
       await run(() =>
@@ -398,11 +411,15 @@ export class FragmentLibrary {
           // ourselves as current, so our own write is not reported as an
           // external edit.
           const current = bodyOf(source);
-          if (
-            expectedBody !== undefined &&
-            current !== expectedBody &&
-            current !== this.written.get(path)
-          ) {
+          const written = this.written.get(path);
+          // Only the draft that wrote this body may treat it as current; a
+          // different window's snapshot must see it as an external change.
+          const ownWrite =
+            written !== undefined &&
+            written.body === current &&
+            owner !== undefined &&
+            written.owner === owner;
+          if (expectedBody !== undefined && current !== expectedBody && !ownWrite) {
             throw new Error(
               "This note changed outside Fragments. Copy your draft, then reopen the note before saving.",
             );
@@ -416,7 +433,7 @@ export class FragmentLibrary {
           return `${header}${separator}${body}`;
         }),
       );
-      this.written.set(path, body);
+      this.written.set(path, { body, owner });
       this.edited.set(path, Date.now());
       await this.refresh(file);
     });

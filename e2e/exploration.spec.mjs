@@ -410,7 +410,7 @@ test("deeply nested collection notes are indexed and listed", async ({ app, sess
   await expect(editor(app)).toHaveValue("deep body");
 });
 
-test.fixme("a stale second window cannot overwrite a newer save", async ({ app, session }) => {
+test("a stale second window cannot overwrite a newer save", async ({ app, session }) => {
   const note = `${libraryRoot}/XWindow.md`;
   await session.host.evaluate(async (path) => {
     await app.vault.create(
