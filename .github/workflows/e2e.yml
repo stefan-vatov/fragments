@@ -33,10 +33,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install a headless display
+      - name: Install AppImage dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libfuse2
+          sudo apt-get install -y libfuse2
 
       - name: Fetch the Obsidian desktop runtime
         run: |
@@ -54,8 +54,7 @@ jobs:
 
       - name: Launch headless Obsidian
         run: |
-          Xvfb :99 -screen 0 1280x800x24 &
-          nohup env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY DISPLAY=:99 \
+          nohup env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
             /tmp/squashfs-root/obsidian --ozone-platform=headless --disable-gpu --no-first-run \
             --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
             --remote-debugging-address=127.0.0.1 --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
