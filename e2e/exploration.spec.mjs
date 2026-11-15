@@ -1176,13 +1176,17 @@ test("rapid external edits keep the local draft and the external file", async ({
   await expect.poll(() => readNote(disk(session, "Rapid Conflict.md"))).toContain("external two");
   await expect(editor(app)).toHaveValue("LOCAL DRAFT");
   await expect
-    .poll(async () =>
-      [
-        ...(await app.locator(".notice").allTextContents()),
-        ...(await session.host.locator(".notice").allTextContents()),
-      ].join("\n"),
-    )
-    .toContain("changed outside Fragments");
+    .poll(async () => {
+      for (const page of [app, session.host]) {
+        const text = await page
+          .locator("body")
+          .innerText()
+          .catch(() => "");
+        if (text.includes("changed outside Fragments")) return true;
+      }
+      return false;
+    })
+    .toBe(true);
 });
 
 test("renaming under an active filter updates the filtered list", async ({ app }) => {

@@ -272,6 +272,9 @@ function useDraft(
       })
       .catch((error: Error) => {
         if (!active) return;
+        // A delete or external folder rename is already explained by the
+        // recovery banner; a "no longer available" toast would contradict it.
+        if (!owner.path || library.fileStamp(owner.path) === undefined) return;
         // The editor must not keep pretending to load: offer a retry instead.
         setReadFailed(true);
         errorNotice(error);
