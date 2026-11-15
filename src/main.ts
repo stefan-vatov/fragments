@@ -112,7 +112,20 @@ export default class FragmentsPlugin extends Plugin {
         const root = this.library.folder();
         if (oldPath === root || root.startsWith(`${oldPath}/`)) {
           this.settings.folder = `${file.path}${root.slice(oldPath.length)}`;
-          void this.saveSettings().then(() => this.library.load(moved));
+          // Reload regardless of the save result: a failed write must not leave
+          // the library indexing the old path. Surface the failure and retry
+          // the persistence once the reload has settled.
+          let saveFailed = false;
+          void this.saveSettings()
+            .catch((error: Error) => {
+              saveFailed = true;
+              new Notice(`Fragments could not save the new folder: ${error.message}`);
+            })
+            .then(() => this.library.load(moved))
+            .then(() => (saveFailed ? this.saveSettings() : undefined))
+            .catch((error: Error) => {
+              new Notice(`Fragments could not save the new folder: ${error.message}`);
+            });
           return;
         }
         void this.flushDrafts()
