@@ -18,10 +18,16 @@ Use an isolated vault and profile, and build with
 `FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js"` to avoid hot-reloading
 a plugin linked into the user's running vault. This also applies to `pnpm run check`.
 Reuse the recorded test session while iterating; copy updated artifacts and reload
-the plugin in that session. Verify real pointer/keyboard interactions through CDP,
-Markdown writes, app-window identity through replacement/reload, and zero test-process
-clients on the user's desktop. Report the backend, interaction tool, actual coverage,
-and cleanup. Leave the user's normal Obsidian process and vaults untouched.
+the plugin in that session. Use Playwright over CDP as the default interaction tool:
+`pnpm run test:e2e` attaches scenarios to the recorded session, and
+`scripts/obsidian-playwright.mjs` provides `attachObsidian()` for exploration.
+Prefer semantic locators, accessibility snapshots, and bounded assertions; preserve
+traces and use screenshots for visual/failure evidence. Verify real pointer/keyboard
+interactions, Markdown writes, app-window identity through replacement/reload, and
+zero test-process clients on the user's desktop. Report the backend, interaction
+tool, actual coverage, and cleanup. Disconnecting Playwright leaves Obsidian running;
+stop the owned test process when finished. Leave the user's normal Obsidian process
+and vaults untouched.
 
 <!-- BEGIN PROJECT CANON -->
 <!-- GENERATED from canon-core.md by tools/build.py - edit canon-core.md instead -->

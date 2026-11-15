@@ -10,7 +10,7 @@ describe("reopening Fragments in a popout", () => {
     delete (Platform as unknown as { isDesktopApp?: boolean }).isDesktopApp;
   });
 
-  it("creates a fresh leaf instead of replacing an unrelated note tab", async () => {
+  it("reuses the marked app window while preserving its unrelated note tab", async () => {
     (Platform as unknown as { isDesktopApp?: boolean }).isDesktopApp = true;
     const { app, addFile } = createTestVault();
     addFile("Fragments/Alpha.md", note, 1_000);
@@ -25,9 +25,11 @@ describe("reopening Fragments in a popout", () => {
       getContainer: () => popout,
       setViewState: vi.fn(async () => undefined),
     };
+    let activeContainer: unknown = rootSplit;
+    let createdContainer: unknown;
     const freshLeaf = {
       view: {},
-      getContainer: () => rootSplit,
+      getContainer: () => createdContainer,
       setViewState: vi.fn(async () => undefined),
     };
     const workspace = {
@@ -35,8 +37,16 @@ describe("reopening Fragments in a popout", () => {
       onLayoutReady: (callback: () => void) => callback(),
       iterateAllLeaves: (callback: (leaf: unknown) => void) => callback(noteLeaf),
       getLeavesOfType: () => [],
-      getMostRecentLeaf: () => noteLeaf,
-      getLeaf: vi.fn(() => freshLeaf),
+      setActiveLeaf: vi.fn((leaf: typeof noteLeaf) => {
+        activeContainer = leaf.getContainer();
+      }),
+      getLeaf: vi.fn((mode: string) => {
+        createdContainer =
+          mode === "tab"
+            ? activeContainer
+            : { doc: { documentElement: document.createElement("div") } };
+        return freshLeaf;
+      }),
       moveLeafToPopout: vi.fn(async () => undefined),
       revealLeaf: vi.fn(async () => undefined),
       detachLeavesOfType: vi.fn(),
@@ -59,9 +69,10 @@ describe("reopening Fragments in a popout", () => {
 
     const leaf = await plugin.activateView();
 
-    // The popout's note tab must survive; Fragments gets its own tab/window.
+    // The note survives in its tab, and Fragments opens beside it in the same window.
     expect(noteLeaf.setViewState).not.toHaveBeenCalled();
-    expect(workspace.getLeaf).toHaveBeenCalledWith("window");
+    expect(leaf?.getContainer()).toBe(popout);
+    expect(workspace.moveLeafToPopout).not.toHaveBeenCalled();
     expect(freshLeaf.setViewState).toHaveBeenCalledWith({ type: "fragments-view", active: true });
     expect(leaf).toBe(freshLeaf);
   });

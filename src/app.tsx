@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import type FragmentsPlugin from "./main";
 import type { FragmentsView, FragmentsViewState } from "./view";
-import { TitleWriteError } from "./library";
+import { ScratchpadConflictError, TitleWriteError } from "./library";
 import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
@@ -925,22 +925,25 @@ function useController({ plugin, view, handle }: Props) {
     const filterChanged = previousFilter.current !== filterKey;
     previousFilter.current = filterKey;
     if (selected && filtered.some((item) => item.path === selected)) return;
+    // A local rename owns the selection until its title write settles. The
+    // vault's rename event can publish the new path with the old title first;
+    // following it now would remount the title field and erase the pending edit.
+    if (!filterChanged && selected && transitioning.current.has(selected)) return;
     // An external rename moves the file; keep the editor on it.
     const moved = selected ? library.relocation(selected) : undefined;
-    if (moved && filtered.some((item) => item.path === moved)) {
+    const relocationCandidates = filterChanged ? filtered : entries;
+    if (moved && relocationCandidates.some((item) => item.path === moved)) {
       setSelected(moved);
       return;
     }
+    // The rename event evicts the old row before its draft flush and refresh
+    // publish the new one. Keep its place through that indexing gap.
+    if (!filterChanged && moved && library.contains(moved)) return;
     // Entries also change when the user acts on the open fragment (star, tag,
     // body edit). Keep the editor on a fragment that still exists instead of
     // diverting the next keystrokes into a different note; only a filter change
     // or a vanished fragment may move the selection.
-    if (
-      !filterChanged &&
-      selected &&
-      (transitioning.current.has(selected) || entries.some((item) => item.path === selected))
-    )
-      return;
+    if (!filterChanged && selected && entries.some((item) => item.path === selected)) return;
     setSelected(filtered[0]?.path ?? null);
   }, [selected, entries, filtered, filterKey, creating, library]);
 
@@ -1016,7 +1019,7 @@ function useController({ plugin, view, handle }: Props) {
 
   const paletteItems = dialog === "palette" ? paletteResults(entries, paletteQuery) : [];
   useEffect(() => {
-    setPaletteIndex((current) => Math.min(current, Math.max(paletteItems.length - 1, 0)));
+    setPaletteIndex((current) => Math.min(current, paletteItems.length));
   }, [paletteItems.length]);
   const choosePalette = (index: number): void => {
     const item = paletteItems[index];
@@ -1516,10 +1519,11 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     (current: ScratchpadSession) => {
       if (current.timer !== undefined) window.clearTimeout(current.timer);
       current.timer = undefined;
-      if (!current.ready) return;
+      if (!current.ready || current.conflicted) return;
       const next = current.text;
       current.pending = current.pending
         .then(async () => {
+          if (current.conflicted) return;
           // A conflicted session stays conflicted until the pad is reopened:
           // adopting the file's text as a baseline here would let the next
           // keystroke silently overwrite the external edit.
@@ -1538,7 +1542,7 @@ function useScratchpad(library: FragmentLibrary, path: string) {
         })
         .catch((error: Error) => {
           const first = !current.conflicted;
-          current.conflicted = true;
+          if (error instanceof ScratchpadConflictError) current.conflicted = true;
           if (session.current === current) {
             setStatus("error");
             if (first) errorNotice(error);
@@ -1595,9 +1599,9 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     if (!current?.ready) return;
     current.text = value;
     setText(value);
-    setStatus("dirty");
+    setStatus(current.conflicted ? "error" : "dirty");
     if (current.timer !== undefined) window.clearTimeout(current.timer);
-    current.timer = window.setTimeout(() => flush(current), 500);
+    if (!current.conflicted) current.timer = window.setTimeout(() => flush(current), 500);
   };
 
   const saveScratchpad = (): void => {
@@ -1612,15 +1616,18 @@ function useScratchpad(library: FragmentLibrary, path: string) {
     if (!current) return;
     if (current.timer !== undefined) window.clearTimeout(current.timer);
     current.timer = undefined;
-    current.conflicted = false;
     setStatus("loading");
-    void library
-      .readScratchpad(current.path)
+    // Blur may already have queued another flush. Drain that whole chain before
+    // adopting a new baseline, so an old write cannot use the reloaded text as
+    // permission to overwrite the external edit.
+    void current.pending
+      .then(() => library.readScratchpad(current.path))
       .then((loaded) => {
         if (session.current !== current) return;
         current.text = loaded;
         current.saved = loaded;
         current.ready = true;
+        current.conflicted = false;
         setText(loaded);
         setStatus(library.hasScratchpad() ? "saved" : "empty");
       })
@@ -2305,9 +2312,7 @@ function Dialogs() {
                   onKeyDown={(event) => {
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
-                      setPaletteIndex(
-                        Math.min(paletteIndex + 1, Math.max(paletteItems.length - 1, 0)),
-                      );
+                      setPaletteIndex(Math.min(paletteIndex + 1, paletteItems.length));
                     }
                     if (event.key === "ArrowUp") {
                       event.preventDefault();

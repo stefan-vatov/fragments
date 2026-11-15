@@ -27,6 +27,15 @@ export class TitleWriteError extends Error {
   }
 }
 
+export class ScratchpadConflictError extends Error {
+  constructor() {
+    super(
+      "The scratchpad changed outside Fragments. Copy your text, then reopen Fragments before saving.",
+    );
+    this.name = "ScratchpadConflictError";
+  }
+}
+
 const SCRATCHPAD_NAME = "_fragments-scratchpad.md";
 
 const cleanFolder = (folder: string): string =>
@@ -354,10 +363,7 @@ export class FragmentLibrary {
       if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
       await run(() =>
         this.app.vault.process(file, (source) => {
-          if (source !== expected)
-            throw new Error(
-              "The scratchpad changed outside Fragments. Copy your text, then reopen Fragments before saving.",
-            );
+          if (source !== expected) throw new ScratchpadConflictError();
           return text;
         }),
       );

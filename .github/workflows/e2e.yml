@@ -7,7 +7,7 @@ on:
     - cron: "0 4 * * *"
 
 jobs:
-  rename:
+  ui:
     strategy:
       fail-fast: false
       matrix:
@@ -21,6 +21,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       FRAGMENTS_TEST_ROOT: /tmp/fragments-rename.ci
       FRAGMENTS_CDP_PORT: "9222"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +91,7 @@ jobs:
           FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build
           node scripts/prepare-e2e-fixture.mjs
 
-      - name: Run the rename flow on Linux
+      - name: Run Playwright scenarios on Linux
         if: runner.os == 'Linux'
         env:
           FRAGMENTS_DISPLAY_MODE: xvfb
@@ -100,7 +101,7 @@ jobs:
             env FRAGMENTS_OBSIDIAN_EXECUTABLE="$RUNNER_TEMP/squashfs-root/obsidian" \
             node scripts/run-e2e.mjs
 
-      - name: Run the rename flow on macOS
+      - name: Run Playwright scenarios on macOS
         if: runner.os == 'macOS'
         env:
           FRAGMENTS_DISPLAY_MODE: dedicated-gui
@@ -117,4 +118,6 @@ jobs:
             /tmp/fragments-rename.ci/**/*.png
             /tmp/fragments-rename.ci/**/*.log
             /tmp/fragments-rename.ci/**/*.json
+            /tmp/fragments-rename.ci/**/*.zip
+            /tmp/fragments-rename.ci/**/error-context.md
           if-no-files-found: ignore

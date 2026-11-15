@@ -2,6 +2,7 @@
 status: reference
 scope: [fragments]
 validation:
+  - e2e/fragments.spec.mjs
   - tests/plugin-lifecycle.test.tsx
   - tests/popout-reuse.test.tsx
   - tests/startup-second-leaf.test.ts
@@ -24,6 +25,11 @@ Explicit opening collapses duplicate Fragments leaves. Startup restoration
 keeps deliberately restored leaves, preserves their docking, and does not
 steal focus. An unrelated note tab must survive opening Fragments; reusing
 application space does not authorize replacing that note's view.
+
+If a note replaces Fragments in its app window, explicitly opening Fragments
+creates a sibling tab in that same window. The original note remains intact,
+and plugin reload preserves the window. A replacement must not leave another
+app window behind merely because its previous Fragments view no longer exists.
 
 Existing shutdown tests require pending editor text to be flushed before
 views detach. Commands queued before the editor mounts must settle if the

@@ -21,84 +21,58 @@ iterating. This workflow applies to local testing, UI testing, and computer use.
   A shell-only session is insufficient for native Electron windows. A dedicated
   CI runner can provide that GUI environment; do not assume an arbitrary local
   macOS shell is isolated from the user's desktop.
-- This repository, installed dependencies, Python 3, curl, and the pnpm version
+- This repository, installed dependencies (`pnpm install`), Python 3, and the pnpm version
   declared in `package.json`. Run commands from the repository root.
 - Node with built-in `fetch` and `WebSocket` for CDP:
   `node -p '[process.version, typeof fetch, typeof WebSocket].join(" ")'` must
   show two `function` values. Activate the installed Node/pnpm runtime if needed.
-- The local Chrome DevTools Protocol (CDP) connection described below. It drives
-  the actual Electron renderer through pointer/key input and captures screenshots
-  on both platforms. Native computer use is optional for explicitly requested
-  visible sessions.
+- `@playwright/test`, installed with the project dependencies. Playwright attaches
+  to Obsidian over its local Chrome DevTools Protocol (CDP) endpoint; no Playwright
+  browser download is needed. Native computer use is optional for explicitly
+  requested visible sessions.
 
 The default Linux backend is Xvfb with `--ozone-platform=x11`. Ozone headless
 (`--ozone-platform=headless`, with inherited display variables unset) is an
 optional alternative for builds that support it. If either backend fails, stop
 and inspect the log; never retry against the user's display. Report the backend
-and interaction tool. Invoking a plugin method checks behavior; pointer/keyboard
-input checks the rendered interaction. A unit test or successful plugin load
+and interaction tool (Playwright over CDP for the workflow below). Invoking a
+plugin method checks behavior; pointer/keyboard input checks the rendered interaction. A unit test or successful plugin load
 alone is not evidence that the UI works.
 
 ## 1. Reuse a test session or create an isolated fixture
 
 First look for the session recorded by the current task: its temporary directory,
-profile path, process ID, and debugging port. Confirm the process and vault before
-reusing them. Do not launch another test instance on every iteration.
+profile path, process ID, and debugging port. Inspect `session.json`, confirm the
+recorded process and fixture vault, then restore `FRAGMENTS_TEST_ROOT` and
+`FRAGMENTS_CDP_PORT` in your shell. Do not launch another instance on each iteration.
 
-For a fresh session, build and create the fixture:
+For a fresh session, build and prepare the fixture:
 
 ```bash
 export FRAGMENTS_TEST_ROOT="$(mktemp -d /tmp/fragments-ui.XXXXXX)"
 FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build
-python3 - <<'PY'
-import json, os, secrets, shutil, time
-from pathlib import Path
-
-root = Path(os.environ['FRAGMENTS_TEST_ROOT']).resolve()
-vault = root / 'Fragments Test'
-profile = root / 'profile'
-plugin = vault / '.obsidian/plugins/fragments'
-plugin.mkdir(parents=True)
-profile.mkdir()
-(vault / 'Fragments/Examples').mkdir(parents=True)
-(vault / 'Fragments/Welcome.md').write_text(
-    '---\ntitle: Welcome\ntags: [testing]\nstarred: false\nlanguage: markdown\n---\n\n'
-    '# Headless fixture\n\nA synthetic fragment for testing.\n')
-(vault / 'Fragments/Examples/Desk.md').write_text(
-    '---\ntitle: Desk\ntags: [studio]\nstarred: true\nlanguage: plaintext\n---\n\n'
-    'Arrange the desk.\n')
-(vault / '.obsidian/community-plugins.json').write_text('["fragments"]')
-(vault / '.obsidian/app.json').write_text('{"safeMode":false}')
-for name in ['main.js', 'manifest.json', 'styles.css']:
-    source = root / 'build/main.js' if name == 'main.js' else Path.cwd() / name
-    shutil.copy2(source, plugin / name)
-(profile / 'obsidian.json').write_text(json.dumps({'vaults': {
-    secrets.token_hex(8): {
-        'path': str(vault), 'ts': int(time.time() * 1000), 'open': True
-    }
-}}))
-print(vault)
-PY
+node scripts/prepare-e2e-fixture.mjs
 ```
 
-Expected result: a new `/tmp/fragments-ui.…/Fragments Test` vault with two fragments,
-one collection, and one starred note. Only synthetic Markdown and this build are copied into
-it. Its Obsidian profile is separate from the user's normal profile. The profile
-JSON bootstrap is an integration with Obsidian's current desktop implementation;
-if its format changes, open this fixture through Obsidian's vault chooser.
+Expected result: a new `/tmp/fragments-ui.…/Fragments Test` vault with synthetic
+Welcome and Desk fragments, an Examples collection, and a separate `profile`
+directory. Preparation refuses an existing vault/profile; do not run it again to
+update a running session. Its profile JSON bootstrap uses Obsidian's desktop
+implementation; if the format changes, open this fixture through the vault chooser.
 
 The existing `../test-vault` workbench remains an alternative for an explicitly
 chosen development session; its symlink and Hot Reload setup are described in
-[the README](../README.md#development). Do not assume it is disposable.
-The isolated build above leaves the repository's live `main.js` untouched. Do
-not run the root watcher or a default root-output build for automated UI testing
-when a user's vault may have this checkout linked into its plugins.
+[the README](../README.md#development). It is not disposable. Automated tests use
+the isolated fixture. The build above leaves the repository's live `main.js`
+untouched. Do not use a root-output build or watcher for automated testing when a
+user's vault may have this checkout linked into its plugins.
 
-## 2. Launch the test profile once
+## 2. Launch a reusable test session
 
-Inspect the installed executable and choose an unused local port. The free-port
-probe does not reserve the port; check the startup log and endpoint before
-connecting. Use the same fixture and port for subsequent iterations.
+Choose an unused local port and set the inspected, packaged Obsidian executable.
+Do not use a launcher that delegates to the user's existing profile. The port
+probe does not reserve its result; the runner refuses an occupied port before
+launching.
 
 ```bash
 export FRAGMENTS_CDP_PORT="$(python3 - <<'PYPORT'
@@ -110,220 +84,162 @@ PYPORT
 )"
 ```
 
-On Linux, set `FRAGMENTS_OBSIDIAN_EXECUTABLE` to the installed packaged binary
-(for example, an extracted package's `obsidian` executable). This example keeps
-`xvfb-run` alive as the display owner until its foreground child exits, allowing
-session reuse and automatic display cleanup:
+On Linux, launch the runner inside a test-owned Xvfb display:
 
 ```bash
 export FRAGMENTS_OBSIDIAN_EXECUTABLE="/absolute/path/to/obsidian"
-export FRAGMENTS_DISPLAY_MODE="xvfb"
-nohup env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
-  xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' bash -c '
-    test -n "$DISPLAY" || exit 1
-    "$FRAGMENTS_OBSIDIAN_EXECUTABLE" --ozone-platform=x11 \
-      --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
-      --remote-debugging-address=127.0.0.1 \
-      --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
-      --disable-gpu --no-first-run &
-    child=$!
-    printf "%s\n" "$child" > "$FRAGMENTS_TEST_ROOT/obsidian.pid"
-    wait "$child"
-  ' > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
-export FRAGMENTS_DISPLAY_OWNER_PID=$!
+env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
+  xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' \
+  env FRAGMENTS_DISPLAY_MODE=xvfb node scripts/run-e2e.mjs --serve
 ```
 
-If the distribution requires `electron43 /usr/lib/obsidian/app.asar`, replace the
-quoted executable invocation above with those inspected paths, keeping the
-isolation and debugging flags. Do not run a launcher that delegates to the
-user's existing profile. Confirm the test process's environment points only to
-the test-owned display. On a Linux desktop, inspect only recorded test PIDs in
-its compositor client list (for example, `hyprctl clients -j` on Hyprland) and
-confirm zero test clients on the user's desktop after launch, activation, and
-reload. Xvfb windows exist only inside its isolated display.
+Keep this terminal running. The runner starts Electron with
+`--ozone-platform=x11`, the isolated profile, and the debugging endpoint. Keep the
+`DISPLAY` and `XAUTHORITY` supplied by `xvfb-run`; clearing them inside the wrapper
+would disconnect Obsidian from its isolated display. The `xvfb` marker records
+the caller's isolation responsibility; it does not prove that an arbitrary
+existing display is test-owned.
 
-On macOS, run the following only inside the dedicated GUI test environment, or
-when the user explicitly requested visible testing in their session. Invoke the
-bundle executable directly with the isolated profile; do not use `open`, which
-can delegate to an existing Obsidian instance:
+On macOS, run inside the dedicated GUI test runner or login session:
 
 ```bash
 export FRAGMENTS_OBSIDIAN_EXECUTABLE="/Applications/Obsidian.app/Contents/MacOS/Obsidian"
-export FRAGMENTS_DISPLAY_MODE="dedicated-gui"
-nohup "$FRAGMENTS_OBSIDIAN_EXECUTABLE" \
-  --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
-  --remote-debugging-address=127.0.0.1 \
-  --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
-  --no-first-run > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
-printf '%s\n' "$!" > "$FRAGMENTS_TEST_ROOT/obsidian.pid"
+FRAGMENTS_DISPLAY_MODE=dedicated-gui node scripts/run-e2e.mjs --serve
 ```
 
-After the PID file appears, record the session:
+The macOS marker does not create a separate login session. Visible testing in the
+user's session requires an explicit request. Do not use `open`, which can delegate
+to an existing Obsidian instance.
 
-```bash
-export FRAGMENTS_OBSIDIAN_PID="$(cat "$FRAGMENTS_TEST_ROOT/obsidian.pid")"
-python3 - <<'PYSESSION'
-import json, os
-from pathlib import Path
-keys = ['FRAGMENTS_TEST_ROOT', 'FRAGMENTS_CDP_PORT', 'FRAGMENTS_OBSIDIAN_PID',
-        'FRAGMENTS_DISPLAY_MODE', 'FRAGMENTS_DISPLAY_OWNER_PID']
-root = Path(os.environ['FRAGMENTS_TEST_ROOT'])
-(root / 'session.json').write_text(json.dumps(
-    {k: os.environ[k] for k in keys if k in os.environ}, indent=2))
-print(root / 'session.json')
-PYSESSION
-```
+Expected result: Fragments opens and the runner prints `Exploratory session ready`
+with the endpoint and `$FRAGMENTS_TEST_ROOT/session.json`. Record that path. The
+file contains the fixture root, port, Obsidian PID, display mode, and Linux display.
+`--serve` keeps the session available until Ctrl+C and does not run scenarios.
+Use another terminal from the repository root, with the recorded
+`FRAGMENTS_TEST_ROOT` and `FRAGMENTS_CDP_PORT`, for the commands below.
 
-Expected result: the fixture vault opens in the isolated environment and the log
-reports a DevTools WebSocket on the selected port. Record `session.json`'s path
-in the task's working record. Inspect the process, profile, and vault before
-restoring its variables in a new shell. Leave the user's existing Obsidian
-process and vaults running.
+On Linux, confirm the recorded process uses only the test-owned display. Inspect
+only recorded test PIDs in the user's compositor client list (for example,
+`hyprctl clients -j` on Hyprland) and confirm zero test clients after launch,
+activation, and reload. Xvfb windows exist only in its isolated display.
 
-CDP checks cover rendered input, vault writes, and Obsidian popout identity.
-Linux Xvfb does not establish behavior under the user's native compositor,
+Linux Xvfb checks do not establish behavior under the user's native compositor,
 desktop scaling, or OS-window chrome. macOS checks establish native behavior only
 in the tested GUI environment. Report those limits explicitly.
 
-Once startup finishes, list the targets:
+## 3. Attach Playwright and load updated builds
+
+The shared [attachment helper](../scripts/obsidian-playwright.mjs) checks the test
+root and verifies the connected vault's canonical filesystem path before exposing
+it. It returns `{ browser, context, host, root, openFragments() }`; `host` is the
+Obsidian main renderer and `openFragments()` returns the current Fragments page.
+Run examples from the repository root so their imports resolve:
 
 ```bash
-curl --fail --silent "http://127.0.0.1:$FRAGMENTS_CDP_PORT/json/list"
-```
-
-Expect a page at `app://obsidian.md/index.html`. Popouts appear as separate page
-targets, often with an `about:blank` URL. Rediscover their IDs after a window
-closes or the plugin reloads. Do not copy a target ID from an earlier session.
-
-## 3. Connect and load the current build
-
-Native computer use can enable Fragments in **Settings → Community plugins** and
-run **Fragments: Open**. For CDP, create this small client in the test directory:
-
-```bash
-cat > "$FRAGMENTS_TEST_ROOT/cdp.mjs" <<'JS'
-import { readFile, writeFile } from 'node:fs/promises';
-
-const port = Number(process.env.FRAGMENTS_CDP_PORT);
-if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Set FRAGMENTS_CDP_PORT');
-const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const [method, argument, outputPath] = process.argv.slice(2);
-if (method === 'list') {
-  console.log(JSON.stringify(targets, null, 2));
-} else {
-  const target = process.env.FRAGMENTS_CDP_TARGET
-    ? targets.find(page => page.id === process.env.FRAGMENTS_CDP_TARGET)
-    : targets.find(page => page.type === 'page' && page.url.endsWith('/index.html'));
-  if (!target) throw Error('Target is gone; list targets again');
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
-  const timeout = setTimeout(() => { socket.close(); process.exit(1); }, 15000);
-  try {
-    await new Promise((resolve, reject) => {
-      socket.onopen = resolve;
-      socket.onerror = reject;
-    });
-    const params = method === 'Runtime.evaluate'
-      ? { expression: await readFile(argument, 'utf8'), awaitPromise: true, returnByValue: true }
-      : JSON.parse(argument || '{}');
-    const message = await new Promise((resolve, reject) => {
-      socket.onerror = reject;
-      socket.onmessage = event => {
-        const response = JSON.parse(event.data);
-        if (response.id === 1) resolve(response);
-      };
-      socket.send(JSON.stringify({ id: 1, method, params }));
-    });
-    if (message.error || message.result.exceptionDetails) {
-      throw Error(JSON.stringify(message.error || message.result.exceptionDetails));
-    }
-    if (method === 'Page.captureScreenshot') {
-      await writeFile(outputPath, Buffer.from(message.result.data, 'base64'));
-      console.log(outputPath);
-    } else {
-      console.log(JSON.stringify(message.result, null, 2));
-    }
-  } finally {
-    clearTimeout(timeout);
-    socket.close();
-  }
+node --input-type=module <<'JS'
+import { attachObsidian } from './scripts/obsidian-playwright.mjs';
+const session = await attachObsidian();
+try {
+  const page = await session.openFragments();
+  console.log(await page.locator('.fragments-app').ariaSnapshot());
+} finally {
+  await session.browser.close();
 }
 JS
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" list
 ```
 
-Check the connected vault before any mutation. Default evaluation targets the
-main renderer, where Obsidian's `app` is available:
+Expected result: an accessibility snapshot of the actual Fragments interface.
+Playwright's `browser.close()` disconnects this attached client; the test-owned
+Obsidian process remains running. The test profile also has an Obsidian host
+window; count Fragments app windows separately from that host.
+
+To load another build into the same session:
 
 ```bash
-cat > "$FRAGMENTS_TEST_ROOT/inspect.js" <<'JS'
-({ vault: app.vault.getName(), path: app.vault.adapter.getBasePath(),
-   plugins: Object.keys(app.plugins.plugins) })
+FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build
+node --input-type=module <<'JS'
+import { copyFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { attachObsidian } from './scripts/obsidian-playwright.mjs';
+const session = await attachObsidian();
+try {
+  const plugin = join(session.root, 'Fragments Test/.obsidian/plugins/fragments');
+  for (const name of ['main.js', 'manifest.json', 'styles.css']) {
+    const source = name === 'main.js' ? join(session.root, 'build/main.js') : name;
+    await copyFile(source, join(plugin, name));
+  }
+  await session.host.evaluate(async () => {
+    await app.plugins.disablePlugin('fragments');
+    await app.plugins.enablePlugin('fragments');
+  });
+  await session.openFragments();
+} finally {
+  await session.browser.close();
+}
 JS
-unset FRAGMENTS_CDP_TARGET
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Runtime.evaluate "$FRAGMENTS_TEST_ROOT/inspect.js"
 ```
 
-The returned path must equal the canonical filesystem path of
-`$FRAGMENTS_TEST_ROOT/Fragments Test` (`/tmp` resolves to `/private/tmp` on macOS). The filesystem
-adapter and plugin-manager calls here are desktop test-harness integrations, not
-APIs to import into the shipped plugin. If they change, use the app UI.
-
-Enable Fragments if necessary, then open it:
-
-```bash
-cat > "$FRAGMENTS_TEST_ROOT/open.js" <<'JS'
-(async () => {
-  if (app.vault.getName() !== 'Fragments Test') throw Error('Unexpected vault');
-  await app.plugins.setEnable(true);
-  await app.plugins.enablePluginAndSave('fragments');
-  await app.plugins.plugins.fragments.activateView();
-  return app.workspace.getLeavesOfType('fragments-view').map(leaf => ({
-    title: leaf.view.getDisplayText(),
-    popout: leaf.getContainer() !== app.workspace.rootSplit,
-    text: leaf.view.contentEl.innerText
-  }));
-})()
-JS
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Runtime.evaluate "$FRAGMENTS_TEST_ROOT/open.js"
-```
-
-With a fresh fixture, expect one Fragments popout containing Welcome and Desk,
-an Examples collection, and the testing and studio tags.
-The test profile also has an Obsidian host window; count Fragments app windows
-separately from that host.
-
-For another build in the same session, run
-`FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build`, copy that
-isolated `main.js` plus the repository's `manifest.json` and `styles.css` into
-the fixture plugin directory, and disable/enable Fragments through
-the UI or `app.plugins.disablePlugin('fragments')` followed by
-`app.plugins.enablePlugin('fragments')`. Open Fragments again. Do not restart Obsidian
-or make a new profile just to load another build. A build alone does not update
-the copied plugin.
+A build alone does not update the copied plugin. Reuse this vault/profile and
+session while iterating. `openFragments()` finds the current page after a reload;
+do not retain stale page handles after a window closes. The filesystem adapter
+and plugin-manager calls here are desktop test-harness integrations, not shipped
+plugin APIs. If they change, enable and reload through Obsidian's UI.
 
 ## 4. Exercise the actual interface
 
-Rediscover the popout page and set `FRAGMENTS_CDP_TARGET` to its returned ID for
-DOM inspection, input, and screenshots. Keep that variable unset when using
-`app` in the main renderer. Observe current labels and element geometry before
-sending input; do not reuse coordinates from another window size.
-
-For CDP interactions, use `Runtime.evaluate` to obtain an element's
-`getBoundingClientRect()`, then send `Input.dispatchMouseEvent` with
-`mousePressed`/`mouseReleased`, the observed `x`/`y`, `button: "left"`, and
-`clickCount: 1`. Use `Input.insertText` for typing and `Input.dispatchKeyEvent`
-for keys. Use the platform shortcut modifier: Control on Linux, Meta/Command on
-macOS (CDP modifier bit 2 versus 4). For example, with the search field focused in the selected popout:
+Attach the regression scenarios to the recorded, already running session:
 
 ```bash
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Input.insertText '{"text":"Arrange"}'
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Input.dispatchKeyEvent \
-  '{"type":"keyDown","key":"Escape","code":"Escape","windowsVirtualKeyCode":27}'
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Page.captureScreenshot '{}' \
-  "$FRAGMENTS_TEST_ROOT/fragments.png"
+pnpm run test:e2e
 ```
 
-Inspect the screenshot. Run interactions relevant to the change:
+Tests live in `e2e/*.spec.mjs` and run serially against the actual Electron
+renderer. Inspect the output to report the scenarios that passed; the checklist
+below is not evidence that every flow was exercised. Every test writes
+`renderer-errors.json` under `$FRAGMENTS_TEST_ROOT/playwright-results/`.
+Failed tests also retain `trace.zip` and, when the page is available, `screen.png`.
+The run summary is `$FRAGMENTS_TEST_ROOT/playwright-results.json`. Preserve these
+before another run replaces the test output. Failure traces include actions,
+snapshots, and screenshots. Capture a separate screenshot when inspecting visual
+changes in a passing flow. Verify behavior through assertions, rendered input,
+and persisted Markdown.
+
+For exploration, inspect `ariaSnapshot()` and target visible controls by role or
+label. Locator actions and `expect` assertions wait for actionable elements and
+expected state. Use `expect.poll` for file changes instead of fixed sleeps:
+
+```bash
+node --input-type=module <<'JS'
+import { expect } from '@playwright/test';
+import { join } from 'node:path';
+import { attachObsidian } from './scripts/obsidian-playwright.mjs';
+const session = await attachObsidian();
+try {
+  const page = await session.openFragments();
+  console.log(await page.locator('.fragments-app').ariaSnapshot());
+  const search = page.getByLabel('Search fragments', { exact: true });
+  await search.fill('Welcome');
+  const welcome = page.getByRole('listbox', { name: 'Fragments', exact: true })
+    .getByRole('option', { name: /Welcome/ });
+  await expect(welcome).toBeVisible();
+  await welcome.click();
+  await expect(page.getByLabel('Fragment title', { exact: true })).toHaveValue('Welcome');
+  await search.fill('');
+  await page.screenshot({ path: join(session.root, 'exploration.png') });
+} finally {
+  await session.browser.close();
+}
+JS
+```
+
+This example uses the synthetic Welcome note; restore that fixture if a previous
+scenario deliberately changed it. Use `locator.press('ControlOrMeta+s')` for the
+platform save shortcut and `press('Escape')` for cancellation. Native computer
+use remains available for explicitly requested visible sessions. The older
+[CDP client](../scripts/cdp-client.mjs) is an optional diagnostic fallback;
+Playwright locators are the default for interaction.
+
+Exercise flows relevant to the change:
 
 1. Open Fragments repeatedly and concurrently. One app window should remain.
 2. Create a fragment through the UI, edit and save its body, rename it, add tags,
@@ -346,99 +262,86 @@ Inspect the screenshot. Run interactions relevant to the change:
    window and the Fragments popout. Confirm the name field receives focus, can
    be clicked and typed into, and Tab stays within the popup. Background inputs
    must not take focus while it is open. Create collections with Enter and with
-   the button, verify the folders on disk, and confirm Escape and the close
-   button cancel without creating a folder. Check command-palette typing and
-   cancellation too, since it shares the modal overlay.
+   the button, verify folders on disk, and confirm Escape and the close button
+   cancel without creating a folder. Check command-palette typing and cancellation.
 
-Wait for expected DOM or file state with a bounded timeout. API setup does not
-replace pointer/keyboard coverage. Record the flows actually exercised; the
-checklist alone is not evidence of coverage.
-
-For the rename and dialog regressions, with the isolated fixture and Fragments popout open,
-run `node scripts/test-rename-headless.mjs` with `FRAGMENTS_TEST_ROOT` and
-`FRAGMENTS_CDP_PORT` set for that session. It creates and removes a synthetic
-collection, drives the real interface, and checks the resulting Markdown files.
-It also delays a real file creation to verify that immediate typing cannot rename
-the previous fragment, then checks that the new title receives focus and selects
-its text when creation finishes.
-The same script holds body reads and saves to check renaming before a new body
-loads, completing a previous note's save after editing a new note, and typing more
-body text while a rename waits for a save. It checks the persisted Markdown in
-each case. Unit tests also cover returning to a note before its queued save ends.
+API setup does not replace pointer/keyboard coverage. The legacy
+`node scripts/test-rename-headless.mjs` remains available for its detailed rename
+race regressions with the same session environment. It holds real reads/saves and
+checks persisted Markdown while creation, renaming, and body edits overlap.
 
 ## 5. Verify app-window reuse through replacement and reload
 
-A leaf count alone missed this bug. Preserve the actual window identity in one
-main-renderer evaluation while replacing its view and reloading the plugin:
+A Fragments leaf count alone missed this bug. The window-reuse Playwright
+scenario compares the actual window container before and after note replacement
+and plugin reload, and verifies the unrelated note survives. To inspect the
+identity directly in the same recorded session:
 
 ```bash
-cat > "$FRAGMENTS_TEST_ROOT/reuse-window.js" <<'JS'
-(async () => {
-  if (app.vault.getName() !== 'Fragments Test') throw Error('Unexpected vault');
-  const leaf = await app.plugins.plugins.fragments.activateView();
-  const originalWindow = leaf.getContainer();
-  const note = app.vault.getAbstractFileByPath('Fragments/Welcome.md');
-  if (!note) throw Error('Missing fixture');
-  await leaf.openFile(note);
-  const reopened = await app.plugins.plugins.fragments.activateView();
-  if (reopened.getContainer() !== originalWindow) throw Error('View replacement created another window');
-  app.workspace.setActiveLeaf(reopened);
-  const sibling = app.workspace.getLeaf('tab');
-  await sibling.openFile(note);
-  if (sibling.getContainer() !== originalWindow) throw Error('Wrong test window');
-  await app.plugins.disablePlugin('fragments');
-  await app.plugins.enablePlugin('fragments');
-  const restored = await app.plugins.plugins.fragments.activateView();
-  if (restored.getContainer() !== originalWindow) throw Error('Reload created another window');
-  const windows = new Set();
-  app.workspace.iterateAllLeaves(candidate => {
-    if (candidate.getContainer() !== app.workspace.rootSplit) windows.add(candidate.getContainer());
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { attachObsidian } from './scripts/obsidian-playwright.mjs';
+const session = await attachObsidian();
+try {
+  await session.openFragments();
+  const result = await session.host.evaluate(async () => {
+    const leaf = await app.plugins.plugins.fragments.activateView();
+    const originalWindow = leaf.getContainer();
+    const note = app.vault.getAbstractFileByPath('Fragments/Examples/Desk.md');
+    if (!note) throw Error('Missing fixture');
+    await leaf.openFile(note);
+    const reopened = await app.plugins.plugins.fragments.activateView();
+    const replacementReused = reopened.getContainer() === originalWindow;
+    const notePreserved = leaf.view.file?.path === note.path;
+    await app.plugins.disablePlugin('fragments');
+    await app.plugins.enablePlugin('fragments');
+    const restored = await app.plugins.plugins.fragments.activateView();
+    const reloadReused = restored.getContainer() === originalWindow;
+    const windows = new Set();
+    app.workspace.iterateAllLeaves(candidate => {
+      if (candidate.getContainer() !== app.workspace.rootSplit) windows.add(candidate.getContainer());
+    });
+    return { replacementReused, notePreserved, reloadReused, popouts: windows.size,
+      fragmentsLeaves: app.workspace.getLeavesOfType('fragments-view').length };
   });
-  if (windows.size !== 1 || app.workspace.getLeavesOfType('fragments-view').length !== 1) {
-    throw Error('Unexpected extra test windows or Fragments views');
-  }
-  return { reusedOriginalWindow: true, popouts: windows.size };
-})()
+  assert.deepEqual(result, { replacementReused: true, notePreserved: true,
+    reloadReused: true, popouts: 1, fragmentsLeaves: 1 });
+  console.log(result);
+} finally {
+  await session.browser.close();
+}
 JS
-unset FRAGMENTS_CDP_TARGET
-node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Runtime.evaluate "$FRAGMENTS_TEST_ROOT/reuse-window.js"
 ```
 
-Expected result: `reusedOriginalWindow: true` and `popouts: 1`. Take each identity
-comparison before detaching that leaf; a detached leaf no longer identifies its
-former window. For a UI-only run, identify the same OS window before and after.
+Expected result: all identity checks pass, the note remains open, and one logical
+popout contains one Fragments view. Compare identities before detaching a leaf;
+a detached leaf no longer identifies its former window. For a UI-only run,
+identify the same OS window before and after. Manually closing an extra window
+is cleanup, not a passing reuse test.
 
 ## 6. Finish without leaving window sprawl
 
-For isolated runs, distinguish Obsidian's logical popouts from desktop clients:
-one logical Fragments app window is expected while testing, and zero test-process
-windows may appear on the user's desktop.
+Distinguish Obsidian's logical popouts from desktop clients: one logical Fragments
+app window is expected while testing, and zero test-process windows may appear
+on the user's desktop. Inspect only known test PIDs in the compositor client
+list. Close note popouts accidentally left by testing after verifying step 5.
 
-Inspect the test process's windows. On this Linux desktop, `hyprctl clients -j`
-can identify them by PID and vault title. Inspect only the known test process.
-Close any note popout accidentally left by testing. Confirm one Fragments window
-remains if leaving a session available for the user, and report the retained
-vault/profile path. A manually closed leftover is cleanup, not a passing reuse
-test; step 5 must still pass.
+When finished, stop the `--serve` runner with Ctrl+C. It disconnects Playwright
+and stops its owned Obsidian process; `xvfb-run` then cleans up its display.
+Confirm the recorded Obsidian PID exited and the test-owned Xvfb server is gone.
+Closing an attached Playwright browser alone does not stop Obsidian.
 
-If the test session is no longer needed, close its fixture vault through Obsidian
-and verify that the recorded test process exited before removing its temporary
-directory. On Linux also verify the recorded display owner exited and its Xvfb
-server was cleaned up; keep `xvfb-run` alive until Obsidian exits so its cleanup
-trap can run. Terminate only recorded test processes if graceful closure fails. Never use a broad `pkill obsidian`, restart the user's normal profile,
-or remove the shared `../test-vault` as cleanup. Preserve requested screenshots
-and results before deleting temporary files.
+For a manually launched session, close its fixture vault and verify the recorded
+process exited. Terminate only recorded test processes if graceful closure fails.
+Never use a broad `pkill obsidian`, restart the user's normal profile, or remove
+`../test-vault`. Preserve requested traces, screenshots, and results before
+removing temporary files. If retaining a session, report its vault/profile path,
+PID, port, display backend, and observed window state.
 
 ## One-shot runner and CI
 
-For a fresh fixture prepared in step 1, `scripts/run-e2e.mjs` launches the isolated
-Obsidian profile, opens Fragments, drives CDP regression checks, captures
-screenshots, and closes its Obsidian process. It requires `FRAGMENTS_TEST_ROOT`,
-`FRAGMENTS_CDP_PORT`, and `FRAGMENTS_OBSIDIAN_EXECUTABLE`. Use it instead of the
-manual launch when session reuse is unnecessary; do not run it against an
-already running fixture profile.
-
-On Linux, wrap the entire runner in its own Xvfb lifetime:
+For a fresh fixture prepared in step 1, omit `--serve` to launch the isolated
+profile, run Playwright Test, and stop the owned Obsidian process afterward:
 
 ```bash
 env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
@@ -446,45 +349,47 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
   env FRAGMENTS_DISPLAY_MODE=xvfb node scripts/run-e2e.mjs
 ```
 
-Here the mode is set inside the test-owned display wrapper. Keep the `DISPLAY`
-and `XAUTHORITY` supplied by `xvfb-run`; clearing them afterward would disconnect
-Obsidian from that isolated display. The runner rejects a missing Linux display
-or mode marker. The marker records the caller's isolation responsibility; it is
-not proof that an arbitrary existing display is test-owned.
-
-On macOS, inside the dedicated GUI test runner or login session:
+On macOS, inside the dedicated GUI session:
 
 ```bash
 FRAGMENTS_DISPLAY_MODE=dedicated-gui node scripts/run-e2e.mjs
 ```
 
-The marker confirms that the caller has selected the dedicated GUI environment;
-it does not create a separate login session. The CI matrix uses Linux Xvfb and
-native macOS Obsidian on separate runners with disposable fixtures. Report actual
-CI results separately from local coverage; an unexecuted matrix is not evidence
-of a platform passing. Keep logs and screenshots as artifacts before removing
-the fixture. No CI job should require the user's workbench or desktop.
+Both commands require `FRAGMENTS_TEST_ROOT`, `FRAGMENTS_CDP_PORT`, and
+`FRAGMENTS_OBSIDIAN_EXECUTABLE`. Do not run this launcher against an already
+running fixture profile; use `pnpm run test:e2e` to attach to that session.
+
+The CI matrix uses Linux Xvfb and native macOS Obsidian on separate runners with
+disposable fixtures. Report actual CI results separately from local coverage; an
+unexecuted matrix is not evidence of a platform passing. Keep logs and Playwright
+artifacts before removing the fixture. No CI job uses the user's workbench or desktop.
 
 ## Troubleshooting
 
-| Symptom                                       | Action                                                                                                                      |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Native computer use reports disabled surfaces | State the limitation and use the local CDP fallback. Do not claim the native tool ran.                                      |
-| No debugging endpoint                         | Inspect `obsidian.log`, the recorded process/profile, and port availability. Do not attach to an unrelated endpoint.        |
-| Fragments is absent from the plugin list      | Confirm the copied `manifest.json` ID and folder are `fragments`, then enable community plugins in the fixture profile.     |
-| The UI still shows an earlier build           | Rebuild, copy all three artifacts, then disable/enable the plugin in this same profile.                                     |
-| CDP returned `exceptionDetails`               | Treat the evaluation as failed even if the protocol request itself succeeded.                                               |
-| A fixture note window lingers                 | Run the window-identity regression. Fix reuse before cleaning up the leftover; do not explain it away as a second instance. |
+| Symptom                                       | Action                                                                                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native computer use reports disabled surfaces | State the limitation and use Playwright over the isolated endpoint. Do not claim native coverage.                                                                               |
+| No debugging endpoint                         | Inspect `obsidian.log`, `session.json`, and the recorded process/profile. Do not attach to an unrelated endpoint.                                                               |
+| Attachment rejects the vault path             | Check the recorded root and port. The endpoint must serve that root's `Fragments Test` vault.                                                                                   |
+| Fragments is absent from the plugin list      | Confirm the copied manifest ID and plugin folder are `fragments`, then enable community plugins in the fixture.                                                                 |
+| The UI shows an earlier build                 | Rebuild, copy all three artifacts, and reload in the same session as shown in step 3.                                                                                           |
+| A locator times out                           | Read the accessibility snapshot and trace. Check the rendered role/name and expected state before changing the locator.                                                         |
+| A shortcut does not reach the renderer        | Inspect key events; Obsidian/Electron can intercept shortcuts before plugin handlers. Use visible controls or save-on-blur, verify files, and report the shortcut coverage gap. |
+| A fixture note window lingers                 | Run the window-identity regression and fix reuse before cleanup.                                                                                                                |
 
 ## Verify it works
 
-Report the tested build, fixture path, interaction tool, exercised flows, observed
-window count/identity, Markdown result, and any remaining limitation. Link the
-screenshot or evidence files when useful. Confirm test leftovers are closed or
-explicitly retained, and keep the user's normal vaults untouched.
+Report the tested build, fixture path, backend, interaction tool, scenarios
+actually exercised, observed window count/identity, Markdown result, and remaining
+limits. Link traces or screenshots where useful. Confirm test leftovers are
+closed or explicitly retained and the user's normal vaults remain untouched.
 
-Run the repository's appropriate automated checks as well. Use
-`FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run check` while
-testing to keep its build away from a live linked plugin. The check
-executes build, lint, and formatting checks in sequence. Actual desktop testing and these checks supply different evidence;
+Run the repository's automated checks as well:
+
+```bash
+FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run check
+```
+
+This runs build, lint, formatting, and unit tests without writing a bundle into
+a live linked plugin. Desktop testing and these checks provide different evidence;
 report each accurately.

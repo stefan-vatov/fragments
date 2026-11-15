@@ -214,7 +214,7 @@ export default class FragmentsPlugin extends Plugin {
   private prepareLeaf(leaves: WorkspaceLeaf[], keepDock = false): WorkspaceLeaf {
     const workspace = this.app.workspace;
     const leaf =
-      this.findWindowLeaf() ??
+      this.findWindowLeaf(!keepDock) ??
       leaves.find((item) => item.getContainer() !== workspace.rootSplit) ??
       leaves[0] ??
       workspace.getLeaf(Platform.isDesktopApp ? "window" : "tab");
@@ -226,10 +226,11 @@ export default class FragmentsPlugin extends Plugin {
     return leaf;
   }
 
-  private findWindowLeaf(): WorkspaceLeaf | undefined {
+  private findWindowLeaf(createTab: boolean): WorkspaceLeaf | undefined {
     if (!Platform.isDesktopApp) return undefined;
     const workspace = this.app.workspace;
     let found: WorkspaceLeaf | undefined;
+    let windowLeaf: WorkspaceLeaf | undefined;
     workspace.iterateAllLeaves((leaf) => {
       const container = leaf.getContainer();
       if (
@@ -237,14 +238,18 @@ export default class FragmentsPlugin extends Plugin {
         container !== workspace.rootSplit &&
         container.doc.documentElement.hasAttribute(WINDOW_MARKER)
       ) {
-        // Reuse a Fragments leaf in this window only. Falling back to the
-        // window's most recent tab would convert an unrelated note into the
-        // Fragments view and replace what the user had open there.
+        windowLeaf ??= leaf;
         found = workspace
           .getLeavesOfType(FRAGMENTS_VIEW)
           .find((candidate) => candidate.getContainer() === container);
       }
     });
+    if (!found && windowLeaf && createTab) {
+      // A note may have replaced Fragments. Keep that note and open a sibling
+      // tab in the same app window; restoring a layout must not change focus.
+      workspace.setActiveLeaf(windowLeaf, { focus: false });
+      return workspace.getLeaf("tab");
+    }
     return found;
   }
 }

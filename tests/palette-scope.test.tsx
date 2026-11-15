@@ -26,10 +26,7 @@ const findButton = (host: HTMLElement, label: string): HTMLButtonElement => {
   return found;
 };
 
-const renderShell = async (): Promise<{
-  host: HTMLElement;
-  root: ReturnType<typeof createRoot>;
-}> => {
+const renderShell = async () => {
   const vault = createTestVault();
   vault.addFile("Fragments/Work/Alpha.md", "Alpha body", 3_000);
   vault.addFile("Fragments/Work/Beta.md", "Beta body", 2_000);
@@ -57,7 +54,7 @@ const renderShell = async (): Promise<{
   await act(async () => {
     root.render(<AppShell plugin={plugin} view={view} handle={() => undefined} />);
   });
-  return { host, root };
+  return { host, root, files: vault.files };
 };
 
 describe("command palette and the active collection scope", () => {
@@ -65,6 +62,46 @@ describe("command palette and the active collection scope", () => {
     globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
     document.body.replaceChildren();
   });
+
+  it.each(["Alpha", ""])(
+    "reaches New snippet with ArrowDown when the query is %j",
+    async (query) => {
+      const { host, root, files } = await renderShell();
+      try {
+        await act(async () =>
+          host.querySelector<HTMLButtonElement>('[aria-label="Search commands"]')!.click(),
+        );
+        const input = element()!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+            input,
+            query,
+          );
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        const results = host.querySelectorAll(".fragments-palette button").length - 1;
+        for (let index = 0; index < results; index++) {
+          await act(async () =>
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+          );
+        }
+        expect(host.querySelector(".fragments-palette button.active")?.textContent).toBe(
+          "New snippet",
+        );
+        await act(async () =>
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+        );
+        expect(host.querySelector(".fragments-palette")).toBeNull();
+        expect(files.has("Fragments/Untitled fragment.md")).toBe(true);
+        expect(host.querySelector<HTMLInputElement>('[aria-label="Fragment title"]')?.value).toBe(
+          "Untitled fragment",
+        );
+      } finally {
+        await act(async () => root.unmount());
+        host.remove();
+      }
+    },
+  );
 
   it("opens a palette pick outside the active collection without losing the scope", async () => {
     const { host, root } = await renderShell();

@@ -9,7 +9,7 @@ This record preserves documented product guarantees and explicit repository
 rules. It does not supply missing design rationale or infer decisions from
 implementation choices.
 
-- [Standards](standards.md) — read when changing the repository, validating work, testing in Obsidian, or releasing.
+- [Standards](standards.md) — read when changing the repository, validating work, opening a Playwright session, exploring Obsidian, or releasing.
 - [Vault persistence](architecture/vault-persistence.md) — read when changing storage, metadata, external edits, saves, or the shared scratchpad.
 - [Application lifecycle](architecture/application-lifecycle.md) — read when changing activation, windows, tabs, workspace restore, reload, or shutdown.
 

@@ -4,8 +4,8 @@ import { once } from "node:events";
 import { open, realpath, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { connect } from "./cdp-client.mjs";
+import { createRequire } from "node:module";
+import { attachObsidian } from "./obsidian-playwright.mjs";
 import { testRoot } from "./e2e-paths.mjs";
 
 const root = await testRoot(process.env.FRAGMENTS_TEST_ROOT);
@@ -60,13 +60,18 @@ child.on("error", (error) => {
   launchError = error;
 });
 const exited = once(child, "exit").catch(() => undefined);
-let host;
 let page;
 let suite;
+let session;
+let forcedStop;
 const interrupt = () => {
   process.exitCode = 1;
   suite?.kill("SIGTERM");
   child.kill("SIGTERM");
+  forcedStop ??= setTimeout(() => {
+    suite?.kill("SIGKILL");
+    child.kill("SIGKILL");
+  }, 5000);
 };
 process.once("SIGINT", interrupt);
 process.once("SIGTERM", interrupt);
@@ -112,67 +117,62 @@ try {
       2,
     ),
   );
-  const target = await until(
+  await until(
     async () =>
       (await targets()).find(
         (candidate) => candidate.type === "page" && candidate.url.endsWith("/index.html"),
       ),
     "Obsidian renderer",
   );
-  host = await connect(target);
-  await until(
-    () => host.evaluate("typeof app !== 'undefined' && app.workspace.layoutReady"),
-    "workspace ready",
-  );
-  assert.equal(
-    await host.evaluate("app.vault.adapter.getBasePath()"),
-    join(root, "Fragments Test"),
-  );
-  await host.evaluate(`(async () => {
-    await app.plugins.setEnable(true);
-    await app.plugins.enablePluginAndSave('fragments');
-    if (!app.plugins.plugins.fragments) throw new Error('Fragments did not load');
-    await app.plugins.plugins.fragments.activateView();
-  })()`);
-  await until(async () => {
-    for (const candidate of await targets()) {
-      if (candidate.type !== "page" || candidate.url !== "about:blank") continue;
-      const connection = await connect(candidate);
-      try {
-        if (await connection.evaluate("Boolean(document.querySelector('.fragments-app'))")) {
-          page = connection;
-          return true;
-        }
-      } finally {
-        if (page !== connection) connection.close();
-      }
-    }
-    return false;
-  }, "Fragments rendered in its app window");
-  suite = spawn(
-    process.execPath,
-    [fileURLToPath(new URL("./test-rename-headless.mjs", import.meta.url))],
-    {
-      env: environment,
-      stdio: "inherit",
-      timeout: 180_000,
-    },
-  );
-  const [code] = await once(suite, "exit");
-  assert.equal(code, 0, "Rendered pointer/keyboard and Markdown regression suite failed");
-  console.log(`Passed UI interactions and Markdown writes using ${mode}`);
+  session = await attachObsidian();
+  page = await session.openFragments();
+  if (process.argv.includes("--serve")) {
+    console.log(
+      `Exploratory session ready at http://127.0.0.1:${port}; record: ${root}/session.json`,
+    );
+    console.log(
+      "Run pnpm run test:e2e to attach scenarios, or attachObsidian() for interactive exploration. Stop with Ctrl+C.",
+    );
+    await exited;
+  } else {
+    suite = spawn(
+      process.execPath,
+      [
+        createRequire(import.meta.url).resolve("@playwright/test/cli"),
+        "test",
+        ...process.argv.slice(2),
+      ],
+      {
+        env: environment,
+        stdio: "inherit",
+        timeout: 600_000,
+      },
+    );
+    const [code] = await once(suite, "exit");
+    assert.equal(code, 0, "Rendered pointer/keyboard and Markdown regression suite failed");
+    console.log(`Passed UI interactions and Markdown writes using ${mode}`);
+  }
 } finally {
-  if (page) {
+  if (session) {
     try {
-      const screenshot = await page.send("Page.captureScreenshot");
-      await writeFile(join(root, "fragments.png"), Buffer.from(screenshot.data, "base64"));
+      // Scenarios can replace or reload a view, closing the original popout.
+      page = session.host;
+      for (const candidate of session.context.pages()) {
+        if (!candidate.isClosed() && (await candidate.locator(".fragments-app").count())) {
+          page = candidate;
+          break;
+        }
+      }
+      await page.screenshot({ path: join(root, "fragments.png") });
       console.log(`Screenshot: ${root}/fragments.png`);
     } catch (error) {
       console.error("Could not capture the test renderer:", error.message);
     }
-    page.close();
   }
-  host?.close();
+  if (session)
+    await session.browser
+      .close()
+      .catch((error) => console.error("Disconnect failed:", error.message));
   if (child.exitCode === null && child.signalCode === null && !launchError) {
     const force = setTimeout(() => child.kill("SIGKILL"), 5000);
     child.kill("SIGTERM");
@@ -180,6 +180,7 @@ try {
     clearTimeout(force);
   }
   await log.close();
+  clearTimeout(forcedStop);
   process.removeListener("SIGINT", interrupt);
   process.removeListener("SIGTERM", interrupt);
   console.log(

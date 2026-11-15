@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { Platform } from "obsidian";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FragmentsPlugin from "../src/main";
 import { FragmentsView } from "../src/view";
 import { createTestVault } from "./vault";
@@ -18,6 +19,9 @@ const setup = () => {
   const rootSplit = { id: "root" };
   let leaves: ReturnType<typeof makeLeaf>[] = [];
   const readyCallbacks: Array<() => void> = [];
+  const marker = document.createElement("div");
+  marker.setAttribute("data-fragments-app-window", "true");
+  const noteLeaf = makeLeaf({ doc: { documentElement: marker } });
   const workspace = {
     rootSplit,
     getLeavesOfType: vi.fn(() => leaves),
@@ -28,7 +32,11 @@ const setup = () => {
     onLayoutReady: (callback: () => void) => {
       readyCallbacks.push(callback);
     },
-    iterateAllLeaves: () => undefined,
+    iterateAllLeaves: (callback: (leaf: ReturnType<typeof makeLeaf>) => void) => {
+      callback(noteLeaf);
+      for (const leaf of leaves) callback(leaf);
+    },
+    setActiveLeaf: vi.fn(),
   };
   Object.assign(app as unknown as Record<string, unknown>, { workspace });
   (app.vault as unknown as Record<string, unknown>).on = () => ({});
@@ -57,11 +65,17 @@ const setup = () => {
 };
 
 describe("a restored workspace with two Fragments leaves", () => {
+  beforeEach(() => {
+    (Platform as { isDesktopApp?: boolean }).isDesktopApp = true;
+  });
+  afterEach(() => {
+    (Platform as { isDesktopApp?: boolean }).isDesktopApp = false;
+  });
   it("keeps both leaves on startup but collapses them on an explicit open", async () => {
     const { plugin, workspace, settle, setLeaves } = setup();
     const rootSplit = workspace.rootSplit;
     const first = makeLeaf(rootSplit);
-    const second = makeLeaf({ id: "popout" });
+    const second = makeLeaf({ doc: { documentElement: document.createElement("div") } });
     first.view = new FragmentsView(first as never, plugin);
     second.view = new FragmentsView(second as never, plugin);
     setLeaves([first, second]);
@@ -70,6 +84,11 @@ describe("a restored workspace with two Fragments leaves", () => {
     settle();
     await tick(40);
 
+    // A marked window whose Fragments view was replaced must not divert restore.
+    expect(workspace.setActiveLeaf).not.toHaveBeenCalled();
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+    expect(workspace.moveLeafToPopout).not.toHaveBeenCalled();
+    expect(workspace.revealLeaf).not.toHaveBeenCalled();
     // The restore must not discard the second leaf.
     expect(first.detach).not.toHaveBeenCalled();
     expect(second.detach).not.toHaveBeenCalled();

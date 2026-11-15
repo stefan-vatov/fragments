@@ -3,6 +3,7 @@ status: normative
 scope: [fragments]
 validation:
   - scripts/run-e2e.mjs
+  - e2e/fragments.spec.mjs
   - tests/e2e-paths.test.ts
   - .github/workflows/e2e.yml
 related:
@@ -19,6 +20,15 @@ Obsidian. Its isolated vault/profile, isolated display, session reuse,
 interaction evidence, window-identity verification, and cleanup requirements
 remain required; unit tests and a successful plugin load do not establish
 that the rendered interface works.
+
+Playwright over the isolated Obsidian CDP endpoint is the default interaction
+layer for scenarios and exploration. Prefer controls located by role or label,
+bounded assertions, and persisted Markdown as evidence. Accessibility snapshots
+describe rendered state; screenshots supply visual or failure evidence, and
+traces preserve interaction history. A dispatched shortcut alone does not prove
+the plugin received it: host interception and native desktop behavior must be
+reported separately from renderer coverage. Launch, attach, rebuild/reload,
+scenario, and cleanup commands live in `docs/local-testing.md`.
 
 Automated Linux UI testing uses a test-owned virtual display, isolated from the
 user's X11 and Wayland sessions; a supported Ozone headless backend is an
