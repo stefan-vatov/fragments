@@ -446,13 +446,18 @@ test("a stale second window cannot overwrite a newer save", async ({ app, sessio
     await editor(other).fill("B TEXT OVERWRITES");
     await other.waitForTimeout(1500);
     await expect.poll(() => readNote(disk(session, "XWindow.md"))).toContain("A TEXT WINS");
-    await expect(
-      session.host
-        .locator(".notice")
-        .or(app.locator(".notice"))
-        .or(other.locator(".notice"))
-        .first(),
-    ).toContainText("changed outside Fragments");
+    await expect
+      .poll(async () => {
+        for (const page of [session.host, app, other]) {
+          const text = await page
+            .locator("body")
+            .innerText()
+            .catch(() => "");
+          if (text.includes("changed outside Fragments")) return true;
+        }
+        return false;
+      })
+      .toBe(true);
   } finally {
     await session.host.evaluate(async () => {
       const leaves = [];
@@ -516,13 +521,18 @@ test("a dirty draft in another window survives a trash there", async ({ app, ses
       window.confirm = () => true;
     });
     await app.getByRole("button", { name: "Move to trash", exact: true }).click();
-    await expect(
-      app
-        .getByText(/deleted fragment.s unsaved draft was kept/i)
-        .or(other.getByText(/deleted fragment.s unsaved draft was kept/i))
-        .or(other.locator(".notice"))
-        .first(),
-    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        for (const page of [app, other]) {
+          const text = await page
+            .locator("body")
+            .innerText()
+            .catch(() => "");
+          if (/deleted fragment.s unsaved draft was kept/i.test(text)) return true;
+        }
+        return false;
+      })
+      .toBe(true);
   } finally {
     await app.evaluate(() => {
       window.confirm = window.__fragmentsQaConfirm;
