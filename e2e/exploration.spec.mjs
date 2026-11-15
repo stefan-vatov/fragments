@@ -478,7 +478,7 @@ test("a title edit made just before a collection change is not lost", async ({ a
     .toContain("Rename identity body.");
 });
 
-test.fixme("a dirty draft in another window survives a trash there", async ({ app, session }) => {
+test("a dirty draft in another window survives a trash there", async ({ app, session }) => {
   const note = `${libraryRoot}/XTrashDraft.md`;
   await session.host.evaluate(async (path) => {
     await app.vault.create(

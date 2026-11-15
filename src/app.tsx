@@ -203,6 +203,7 @@ function useDraft(
   const [readAttempt, setReadAttempt] = useState(0);
   const [recovered, setRecovered] = useState<{ path: string; text: string } | null>(null);
   const pendingDraft = useRef<PendingDraft | null>(null);
+  const revision = useSyncExternalStore(library.subscribe, library.snapshot);
   // A draft whose save failed must survive the owner change that follows a
   // switch; the path plus the file stamp identify the file it belongs to.
   const failedDrafts = useRef(
@@ -279,6 +280,15 @@ function useDraft(
       active = false;
     };
   }, [owner, modified, library, readAttempt]);
+
+  // An external delete (including a trash in another window) removes the file
+  // without a save attempt here; keep the pending text reachable instead of
+  // letting the row's disappearance take the draft with it.
+  useEffect(() => {
+    if (!dirty || !owner.path || library.fileStamp(owner.path) !== undefined) return;
+    const writing = pendingDraft.current;
+    if (writing?.owner === owner) setRecovered({ path: owner.path, text: writing.text });
+  }, [dirty, library, owner, revision]);
 
   const retryRead = useCallback((): void => {
     setReadFailed(false);
