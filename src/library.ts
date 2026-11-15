@@ -437,7 +437,9 @@ export class FragmentLibrary {
 
   async rename(path: string, title: string): Promise<string> {
     const file = this.file(path);
-    const requested = title.trim();
+    // The title doubles as the file base and availablePath appends ".md", so a
+    // pasted "Notes.md" must not become "Notes.md.md".
+    const requested = title.trim().replace(/\.md$/i, "").trim();
     if (!requested) throw new Error("Enter a title.");
     const parent = file.parent?.path ?? this.folder();
     const unique = this.availableTitle(requested, path);
