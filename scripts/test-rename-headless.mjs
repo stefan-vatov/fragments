@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { connect } from "./cdp-client.mjs";
+import { testRoot } from "./e2e-paths.mjs";
 
-const root = resolve(process.env.FRAGMENTS_TEST_ROOT ?? "");
+const root = await testRoot(process.env.FRAGMENTS_TEST_ROOT);
 const port = Number(process.env.FRAGMENTS_CDP_PORT);
-if (
-  !/^\/tmp\/fragments-(?:ui|rename)\.[^/]+$/.test(root) ||
-  !Number.isInteger(port) ||
-  port < 1 ||
-  port > 65535
-) {
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("Set FRAGMENTS_TEST_ROOT and FRAGMENTS_CDP_PORT for an isolated test session");
 }
 
@@ -96,7 +92,7 @@ async function press(key, code, windowsVirtualKeyCode, modifiers = 0) {
 
 async function type(selector, value) {
   await click(`document.querySelector(${JSON.stringify(selector)})`);
-  await press("a", "KeyA", 65, 2);
+  await press("a", "KeyA", 65, process.platform === "darwin" ? 4 : 2);
   await page.send("Input.insertText", { text: value });
 }
 
@@ -647,8 +643,9 @@ try {
     "Passed: immediate creation/rename, slow body reads, late saves, duplicate titles, selection, filtered edits and move preserved the intended Markdown files; new-title focus and collection dialog Enter worked.",
   );
 } finally {
-  if (delayedRead || delayedSave) {
-    await host.evaluate(`(() => {
+  try {
+    if (delayedRead || delayedSave) {
+      await host.evaluate(`(() => {
       if (window.__fragmentsOriginalRead) {
         window.__fragmentsReleaseRead?.();
         app.plugins.plugins.fragments.library.read = window.__fragmentsOriginalRead;
@@ -662,30 +659,32 @@ try {
         delete window.__fragmentsReleaseSave;
       }
     })()`);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  if (delayedCreation) {
-    await host.evaluate(`(() => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (delayedCreation) {
+      await host.evaluate(`(() => {
       window.__fragmentsReleaseCreate?.();
       app.vault.create = window.__fragmentsOriginalCreate;
       delete window.__fragmentsOriginalCreate;
       delete window.__fragmentsReleaseCreate;
     })()`);
-  }
-  if (delayedTitleWrite) {
-    await host.evaluate(`(() => {
+    }
+    if (delayedTitleWrite) {
+      await host.evaluate(`(() => {
       window.__fragmentsReleaseTitleWrite?.();
       app.fileManager.processFrontMatter = window.__fragmentsOriginalTitleWrite;
       delete window.__fragmentsOriginalTitleWrite;
       delete window.__fragmentsReleaseTitleWrite;
     })()`);
-  }
-  if (created) {
-    await host.evaluate(`(async () => {
+    }
+    if (created) {
+      await host.evaluate(`(async () => {
       const folder = app.vault.getAbstractFileByPath(${JSON.stringify(folderPath)});
       if (folder) await app.vault.delete(folder, true);
     })()`);
+    }
+  } finally {
+    page.close();
+    host.close();
   }
-  page.close();
-  host.close();
 }

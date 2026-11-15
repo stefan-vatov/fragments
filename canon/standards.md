@@ -1,6 +1,10 @@
 ---
 status: normative
 scope: [fragments]
+validation:
+  - scripts/run-e2e.mjs
+  - tests/e2e-paths.test.ts
+  - .github/workflows/e2e.yml
 related:
   - ./architecture/vault-persistence.md
   - ./architecture/application-lifecycle.md
@@ -11,10 +15,17 @@ related:
 The human-authored Fragments agent notes in `AGENTS.md`
 govern local testing and protection of the user's running Obsidian and vaults.
 Read the local testing guide, `docs/local-testing.md`, before launching
-Obsidian. Its isolated vault/profile, headless backend, session reuse,
+Obsidian. Its isolated vault/profile, isolated display, session reuse,
 interaction evidence, window-identity verification, and cleanup requirements
 remain required; unit tests and a successful plugin load do not establish
 that the rendered interface works.
+
+Automated Linux UI testing uses a test-owned virtual display, isolated from the
+user's X11 and Wayland sessions; a supported Ozone headless backend is an
+alternative. Native macOS UI testing uses a dedicated GUI test runner or login
+session. Never silently launch tests on, or fall back to, the user's normal
+desktop. Visible testing in the user's session requires an explicit user request.
+The user's normal Obsidian processes and vaults must remain untouched.
 
 Use an isolated build destination for automated validation, including
 `pnpm run check`, as required by the agent notes. The shared development

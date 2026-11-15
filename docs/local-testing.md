@@ -1,36 +1,43 @@
 # How to test Fragments locally in Obsidian
 
 Use a disposable vault and a separate Obsidian profile to test the current plugin
-build in the real desktop app. On Linux, run automated checks on a headless display
-so test windows, activation, and reloads cannot interrupt the user's desktop.
-Visible testing requires an explicit user request. Reuse that test session while iterating. This is
-the workflow for requests such as “local testing”, “test the plugin in Obsidian”,
-or “computer use testing”.
+build in the real desktop app. Linux tests use a test-owned Xvfb display; macOS
+tests use native Obsidian in a dedicated GUI test runner or login session. Never
+silently launch on the user's active desktop. Visible testing in the user's
+session requires an explicit user request. Reuse the recorded test session while
+iterating. This workflow applies to local testing, UI testing, and computer use.
 
 ## Prerequisites
 
-- Obsidian and its Electron runtime installed. The launch command below matches the
-  Arch/Omarchy package layout; inspect the installed launcher before using it on
-  a different machine.
-- This repository, its installed dependencies, and the pnpm version declared in
-  `package.json`. Run commands from the repository root.
-- Python 3, curl, and Node with built-in `fetch` and `WebSocket` for the debugging
-  fallback. `node -p '[process.version, typeof fetch, typeof WebSocket].join(" ")'`
-  must show two `function` values. Activate the installed Node/pnpm runtime if
-  the shell resolves the wrong version; do not replace working dependencies to
-  compensate for an incorrect runtime.
-- The local Chrome DevTools Protocol (CDP) connection described below. CDP
-  controls Obsidian's actual Electron renderer, including on a headless display.
-  Native computer-use controls are an option for explicitly requested visible
-  sessions.
+- Obsidian installed for the current platform. Use the packaged executable directly.
+  Inspect Linux distribution launchers before using them; some invoke a separate
+  Electron runtime and `app.asar`. On macOS the native executable is
+  `/Applications/Obsidian.app/Contents/MacOS/Obsidian`.
+- Linux: Xvfb, `xvfb-run`, and `xauth`. On Ubuntu these come from the `xvfb` and
+  `xauth` packages. Clear inherited `DISPLAY`, `WAYLAND_DISPLAY`, `WAYLAND_SOCKET`,
+  and `XAUTHORITY` before starting the test-owned display. Only `xvfb-run` may
+  provide the new `DISPLAY` and display credentials to the test process.
+- macOS: a dedicated GUI test runner or login session with WindowServer available.
+  A shell-only session is insufficient for native Electron windows. A dedicated
+  CI runner can provide that GUI environment; do not assume an arbitrary local
+  macOS shell is isolated from the user's desktop.
+- This repository, installed dependencies, Python 3, curl, and the pnpm version
+  declared in `package.json`. Run commands from the repository root.
+- Node with built-in `fetch` and `WebSocket` for CDP:
+  `node -p '[process.version, typeof fetch, typeof WebSocket].join(" ")'` must
+  show two `function` values. Activate the installed Node/pnpm runtime if needed.
+- The local Chrome DevTools Protocol (CDP) connection described below. It drives
+  the actual Electron renderer through pointer/key input and captures screenshots
+  on both platforms. Native computer use is optional for explicitly requested
+  visible sessions.
 
-The default Linux path is CDP with Electron's Ozone headless backend. Unset both
-X11 and Wayland display connections when launching it; never silently fall back
-to the user's desktop if headless startup fails. The installed Electron build
-must support that backend. Report the display backend and interaction tool.
-Invoking a plugin method
-checks behavior; pointer/keyboard input checks the rendered interaction. A unit
-test or a successful plugin load alone is not evidence that the UI works.
+The default Linux backend is Xvfb with `--ozone-platform=x11`. Ozone headless
+(`--ozone-platform=headless`, with inherited display variables unset) is an
+optional alternative for builds that support it. If either backend fails, stop
+and inspect the log; never retry against the user's display. Report the backend
+and interaction tool. Invoking a plugin method checks behavior; pointer/keyboard
+input checks the rendered interaction. A unit test or successful plugin load
+alone is not evidence that the UI works.
 
 ## 1. Reuse a test session or create an isolated fixture
 
@@ -47,7 +54,7 @@ python3 - <<'PY'
 import json, os, secrets, shutil, time
 from pathlib import Path
 
-root = Path(os.environ['FRAGMENTS_TEST_ROOT'])
+root = Path(os.environ['FRAGMENTS_TEST_ROOT']).resolve()
 vault = root / 'Fragments Test'
 profile = root / 'profile'
 plugin = vault / '.obsidian/plugins/fragments'
@@ -89,57 +96,94 @@ when a user's vault may have this checkout linked into its plugins.
 
 ## 2. Launch the test profile once
 
-Inspect the installed launcher, choose an unused local port, and launch the
-isolated profile. The free-port probe does not reserve the port; check the
-startup log and endpoint before connecting.
+Inspect the installed executable and choose an unused local port. The free-port
+probe does not reserve the port; check the startup log and endpoint before
+connecting. Use the same fixture and port for subsequent iterations.
 
 ```bash
-command -v obsidian
-cat /usr/bin/obsidian
-command -v electron43
-test -f /usr/lib/obsidian/app.asar
-export FRAGMENTS_CDP_PORT="$(python3 - <<'PY'
+export FRAGMENTS_CDP_PORT="$(python3 - <<'PYPORT'
 import socket
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     print(sock.getsockname()[1])
-PY
+PYPORT
 )"
-export FRAGMENTS_DISPLAY_MODE="ozone-headless"
+```
+
+On Linux, set `FRAGMENTS_OBSIDIAN_EXECUTABLE` to the installed packaged binary
+(for example, an extracted package's `obsidian` executable). This example keeps
+`xvfb-run` alive as the display owner until its foreground child exits, allowing
+session reuse and automatic display cleanup:
+
+```bash
+export FRAGMENTS_OBSIDIAN_EXECUTABLE="/absolute/path/to/obsidian"
+export FRAGMENTS_DISPLAY_MODE="xvfb"
 nohup env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
-  electron43 /usr/lib/obsidian/app.asar --ozone-platform=headless \
+  xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' bash -c '
+    test -n "$DISPLAY" || exit 1
+    "$FRAGMENTS_OBSIDIAN_EXECUTABLE" --ozone-platform=x11 \
+      --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
+      --remote-debugging-address=127.0.0.1 \
+      --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
+      --disable-gpu --no-first-run &
+    child=$!
+    printf "%s\n" "$child" > "$FRAGMENTS_TEST_ROOT/obsidian.pid"
+    wait "$child"
+  ' > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
+export FRAGMENTS_DISPLAY_OWNER_PID=$!
+```
+
+If the distribution requires `electron43 /usr/lib/obsidian/app.asar`, replace the
+quoted executable invocation above with those inspected paths, keeping the
+isolation and debugging flags. Do not run a launcher that delegates to the
+user's existing profile. Confirm the test process's environment points only to
+the test-owned display. On a Linux desktop, inspect only recorded test PIDs in
+its compositor client list (for example, `hyprctl clients -j` on Hyprland) and
+confirm zero test clients on the user's desktop after launch, activation, and
+reload. Xvfb windows exist only inside its isolated display.
+
+On macOS, run the following only inside the dedicated GUI test environment, or
+when the user explicitly requested visible testing in their session. Invoke the
+bundle executable directly with the isolated profile; do not use `open`, which
+can delegate to an existing Obsidian instance:
+
+```bash
+export FRAGMENTS_OBSIDIAN_EXECUTABLE="/Applications/Obsidian.app/Contents/MacOS/Obsidian"
+export FRAGMENTS_DISPLAY_MODE="dedicated-gui"
+nohup "$FRAGMENTS_OBSIDIAN_EXECUTABLE" \
   --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
   --remote-debugging-address=127.0.0.1 \
   --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
-  --disable-gpu --no-first-run > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
-export FRAGMENTS_OBSIDIAN_PID=$!
-python3 - <<'PY'
-import json, os
-from pathlib import Path
-keys = ['FRAGMENTS_TEST_ROOT', 'FRAGMENTS_CDP_PORT', 'FRAGMENTS_OBSIDIAN_PID', 'FRAGMENTS_DISPLAY_MODE']
-root = Path(os.environ['FRAGMENTS_TEST_ROOT'])
-(root / 'session.json').write_text(json.dumps({k: os.environ[k] for k in keys}, indent=2))
-print(root / 'session.json')
-PY
+  --no-first-run > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
+printf '%s\n' "$!" > "$FRAGMENTS_TEST_ROOT/obsidian.pid"
 ```
 
-Expected result: the `Fragments Test` vault opens internally, with no windows on the
-user's desktop, and the log reports a DevTools
-WebSocket on the selected port. Record `session.json`'s path in the task's working
-record. Inspect the session and restore its variables when changing shells.
-Leave the user's existing Obsidian process and vaults running.
+After the PID file appears, record the session:
 
-On Hyprland, inspect `hyprctl clients -j` filtered to the recorded test process
-and confirm it has no desktop clients after launch, Fragments activation, and
-reload. Do not inspect or manipulate unrelated windows. If headless startup is
-unsupported, stop this test session; use a separately isolated virtual display
-or obtain an explicit request for visible testing before continuing.
+```bash
+export FRAGMENTS_OBSIDIAN_PID="$(cat "$FRAGMENTS_TEST_ROOT/obsidian.pid")"
+python3 - <<'PYSESSION'
+import json, os
+from pathlib import Path
+keys = ['FRAGMENTS_TEST_ROOT', 'FRAGMENTS_CDP_PORT', 'FRAGMENTS_OBSIDIAN_PID',
+        'FRAGMENTS_DISPLAY_MODE', 'FRAGMENTS_DISPLAY_OWNER_PID']
+root = Path(os.environ['FRAGMENTS_TEST_ROOT'])
+(root / 'session.json').write_text(json.dumps(
+    {k: os.environ[k] for k in keys if k in os.environ}, indent=2))
+print(root / 'session.json')
+PYSESSION
+```
 
-Headless checks cover the actual rendered interface, input, vault writes, and
-Obsidian popout identity. They do not establish native compositor focus,
-workspace placement, desktop scaling, or OS-window chrome behavior. Those
-specific checks require an explicitly requested visible session. See Chromium's
-[headless testing guidance](https://www.chromium.org/developers/testing/running-tests/).
+Expected result: the fixture vault opens in the isolated environment and the log
+reports a DevTools WebSocket on the selected port. Record `session.json`'s path
+in the task's working record. Inspect the process, profile, and vault before
+restoring its variables in a new shell. Leave the user's existing Obsidian
+process and vaults running.
+
+CDP checks cover rendered input, vault writes, and Obsidian popout identity.
+Linux Xvfb does not establish behavior under the user's native compositor,
+desktop scaling, or OS-window chrome. macOS checks establish native behavior only
+in the tested GUI environment. Report those limits explicitly.
 
 Once startup finishes, list the targets:
 
@@ -219,7 +263,8 @@ unset FRAGMENTS_CDP_TARGET
 node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Runtime.evaluate "$FRAGMENTS_TEST_ROOT/inspect.js"
 ```
 
-The returned path must equal `$FRAGMENTS_TEST_ROOT/Fragments Test`. The filesystem
+The returned path must equal the canonical filesystem path of
+`$FRAGMENTS_TEST_ROOT/Fragments Test` (`/tmp` resolves to `/private/tmp` on macOS). The filesystem
 adapter and plugin-manager calls here are desktop test-harness integrations, not
 APIs to import into the shipped plugin. If they change, use the app UI.
 
@@ -267,7 +312,8 @@ For CDP interactions, use `Runtime.evaluate` to obtain an element's
 `getBoundingClientRect()`, then send `Input.dispatchMouseEvent` with
 `mousePressed`/`mouseReleased`, the observed `x`/`y`, `button: "left"`, and
 `clickCount: 1`. Use `Input.insertText` for typing and `Input.dispatchKeyEvent`
-for keys. For example, with the search field focused in the selected popout:
+for keys. Use the platform shortcut modifier: Control on Linux, Meta/Command on
+macOS (CDP modifier bit 2 versus 4). For example, with the search field focused in the selected popout:
 
 ```bash
 node "$FRAGMENTS_TEST_ROOT/cdp.mjs" Input.insertText '{"text":"Arrange"}'
@@ -364,7 +410,7 @@ former window. For a UI-only run, identify the same OS window before and after.
 
 ## 6. Finish without leaving window sprawl
 
-For headless runs, distinguish Obsidian's logical popouts from desktop clients:
+For isolated runs, distinguish Obsidian's logical popouts from desktop clients:
 one logical Fragments app window is expected while testing, and zero test-process
 windows may appear on the user's desktop.
 
@@ -377,9 +423,47 @@ test; step 5 must still pass.
 
 If the test session is no longer needed, close its fixture vault through Obsidian
 and verify that the recorded test process exited before removing its temporary
-directory. Never use a broad `pkill obsidian`, restart the user's normal profile,
+directory. On Linux also verify the recorded display owner exited and its Xvfb
+server was cleaned up; keep `xvfb-run` alive until Obsidian exits so its cleanup
+trap can run. Terminate only recorded test processes if graceful closure fails. Never use a broad `pkill obsidian`, restart the user's normal profile,
 or remove the shared `../test-vault` as cleanup. Preserve requested screenshots
 and results before deleting temporary files.
+
+## One-shot runner and CI
+
+For a fresh fixture prepared in step 1, `scripts/run-e2e.mjs` launches the isolated
+Obsidian profile, opens Fragments, drives CDP regression checks, captures
+screenshots, and closes its Obsidian process. It requires `FRAGMENTS_TEST_ROOT`,
+`FRAGMENTS_CDP_PORT`, and `FRAGMENTS_OBSIDIAN_EXECUTABLE`. Use it instead of the
+manual launch when session reuse is unnecessary; do not run it against an
+already running fixture profile.
+
+On Linux, wrap the entire runner in its own Xvfb lifetime:
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
+  xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' \
+  env FRAGMENTS_DISPLAY_MODE=xvfb node scripts/run-e2e.mjs
+```
+
+Here the mode is set inside the test-owned display wrapper. Keep the `DISPLAY`
+and `XAUTHORITY` supplied by `xvfb-run`; clearing them afterward would disconnect
+Obsidian from that isolated display. The runner rejects a missing Linux display
+or mode marker. The marker records the caller's isolation responsibility; it is
+not proof that an arbitrary existing display is test-owned.
+
+On macOS, inside the dedicated GUI test runner or login session:
+
+```bash
+FRAGMENTS_DISPLAY_MODE=dedicated-gui node scripts/run-e2e.mjs
+```
+
+The marker confirms that the caller has selected the dedicated GUI environment;
+it does not create a separate login session. The CI matrix uses Linux Xvfb and
+native macOS Obsidian on separate runners with disposable fixtures. Report actual
+CI results separately from local coverage; an unexecuted matrix is not evidence
+of a platform passing. Keep logs and screenshots as artifacts before removing
+the fixture. No CI job should require the user's workbench or desktop.
 
 ## Troubleshooting
 

@@ -1,17 +1,22 @@
 name: E2E
 
-# The headless CDP flow needs the Obsidian desktop runtime, so it runs nightly
-# and on demand instead of on every push; docs/local-testing.md documents the
-# same recipe for a local session.
+# Exercise the packaged desktop app on hosted runners nightly and on demand.
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 4 * * *"
 
 jobs:
-  rename-headless:
-    runs-on: ubuntu-latest
+  rename:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       FRAGMENTS_TEST_ROOT: /tmp/fragments-rename.ci
@@ -33,18 +38,51 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install AppImage dependencies
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2
+          sudo apt-get install -y xvfb xauth libfuse2 libgtk-3-0t64
 
       - name: Fetch the Obsidian desktop runtime
         run: |
-          url=$(curl -fsSL https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest \
-            | python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].endswith(".AppImage")))')
-          curl -fsSL -o /tmp/obsidian.AppImage "$url"
-          chmod +x /tmp/obsidian.AppImage
-          cd /tmp && ./obsidian.AppImage --appimage-extract >/dev/null
+          curl -fsSL https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest \
+            -o "$RUNNER_TEMP/obsidian-release.json"
+          url=$(python3 - "$RUNNER_TEMP/obsidian-release.json" "$RUNNER_OS" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1]) as release_file:
+              assets = json.load(release_file)["assets"]
+          if sys.argv[2] == "Linux":
+              matches = [asset for asset in assets if asset["name"].endswith(".AppImage")
+                         and not any(arch in asset["name"].lower() for arch in ("arm64", "aarch64"))]
+          else:
+              matches = [asset for asset in assets if asset["name"].endswith(".dmg")]
+          if len(matches) != 1:
+              raise SystemExit(f"Expected one desktop runtime, found {len(matches)}")
+          print(matches[0]["browser_download_url"])
+          PY
+          )
+          curl -fsSL -o "$RUNNER_TEMP/obsidian-runtime" "$url"
+
+      - name: Extract the Linux runtime
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x "$RUNNER_TEMP/obsidian-runtime"
+          cd "$RUNNER_TEMP"
+          ./obsidian-runtime --appimage-extract >/dev/null
+          sudo chown root:root "$RUNNER_TEMP/squashfs-root/chrome-sandbox"
+          sudo chmod 4755 "$RUNNER_TEMP/squashfs-root/chrome-sandbox"
+
+      - name: Install the macOS runtime
+        if: runner.os == 'macOS'
+        run: |
+          mountpoint="$RUNNER_TEMP/obsidian-dmg"
+          mkdir -p "$mountpoint"
+          hdiutil attach "$RUNNER_TEMP/obsidian-runtime" -readonly -nobrowse -mountpoint "$mountpoint"
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          ditto "$mountpoint/Obsidian.app" "$RUNNER_TEMP/Obsidian.app"
 
       - name: Build and prepare the isolated fixture
         run: |
@@ -52,27 +90,31 @@ jobs:
           FRAGMENTS_BUILD_OUTFILE="$FRAGMENTS_TEST_ROOT/build/main.js" pnpm run build
           node scripts/prepare-e2e-fixture.mjs
 
-      - name: Launch headless Obsidian
+      - name: Run the rename flow on Linux
+        if: runner.os == 'Linux'
+        env:
+          FRAGMENTS_DISPLAY_MODE: xvfb
         run: |
-          nohup env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
-            /tmp/squashfs-root/obsidian --ozone-platform=headless --disable-gpu --no-first-run \
-            --user-data-dir="$FRAGMENTS_TEST_ROOT/profile" \
-            --remote-debugging-address=127.0.0.1 --remote-debugging-port="$FRAGMENTS_CDP_PORT" \
-            > "$FRAGMENTS_TEST_ROOT/obsidian.log" 2>&1 &
-          for attempt in $(seq 1 60); do
-            if curl -fsS "http://127.0.0.1:$FRAGMENTS_CDP_PORT/json/list" >/dev/null; then exit 0; fi
-            sleep 2
-          done
-          cat "$FRAGMENTS_TEST_ROOT/obsidian.log"
-          exit 1
+          env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XAUTHORITY \
+            xvfb-run -a --server-args='-screen 0 1280x800x24 -nolisten tcp' \
+            env FRAGMENTS_OBSIDIAN_EXECUTABLE="$RUNNER_TEMP/squashfs-root/obsidian" \
+            node scripts/run-e2e.mjs
 
-      - name: Run the rename flow
-        run: node scripts/test-rename-headless.mjs
+      - name: Run the rename flow on macOS
+        if: runner.os == 'macOS'
+        env:
+          FRAGMENTS_DISPLAY_MODE: dedicated-gui
+        run: |
+          FRAGMENTS_OBSIDIAN_EXECUTABLE="$RUNNER_TEMP/Obsidian.app/Contents/MacOS/Obsidian" \
+            node scripts/run-e2e.mjs
 
-      - name: Upload the session log
-        if: failure()
+      - name: Upload screenshots and session logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-obsidian-log
-          path: /tmp/fragments-rename.ci/obsidian.log
+          name: e2e-session-${{ matrix.os }}
+          path: |
+            /tmp/fragments-rename.ci/**/*.png
+            /tmp/fragments-rename.ci/**/*.log
+            /tmp/fragments-rename.ci/**/*.json
           if-no-files-found: ignore

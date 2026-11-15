@@ -34,7 +34,7 @@ The production build (`pnpm run build`) produces `main.js` in the repository roo
 writes its watch bundle to `build/main.js` so a checkout symlinked into a vault is not redeployed on
 every save; run `FRAGMENTS_BUILD_OUTFILE=main.js pnpm run dev` to hot-reload the symlinked vault. The plugin requires `manifest.json`, `main.js`, and `styles.css`. The local workbench vault is `../test-vault` and its plugin directory is symlinked to this repository at `../test-vault/.obsidian/plugins/fragments`. Open that vault in Obsidian and enable Fragments. Changes to `main.js` or `styles.css` can be reloaded with Hot Reload if installed; reload Obsidian after changing the manifest.
 
-Automated Obsidian tests run headlessly with a disposable vault and profile, without opening desktop windows. Build into that session with `FRAGMENTS_BUILD_OUTFILE` so testing cannot hot-reload a plugin linked into your normal vault. For the setup and checks, follow [the local testing guide](docs/local-testing.md).
+Automated Obsidian tests use a disposable vault and profile: Linux runs on an isolated Xvfb display, and macOS uses a dedicated GUI test runner or login session. Tests must not open windows on your normal desktop. Build into that session with `FRAGMENTS_BUILD_OUTFILE` so testing cannot hot-reload a plugin linked into your normal vault. The E2E workflow runs the same CDP interaction checks on Linux and macOS. For the setup and checks, follow [the local testing guide](docs/local-testing.md).
 
 No note content leaves the vault. Fragments has no telemetry or network calls.
 

@@ -1,20 +1,22 @@
 import { randomBytes } from "node:crypto";
 import { cp, mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { testRoot } from "./e2e-paths.mjs";
 
 // Mirrors docs/local-testing.md: an isolated vault + profile with only the
 // built plugin and synthetic notes, never the user's vault or normal profile.
-const root = resolve(process.env.FRAGMENTS_TEST_ROOT ?? "");
-if (!/^\/tmp\/fragments-(?:ui|rename)\.[^/]+$/.test(root)) {
-  throw new Error("Set FRAGMENTS_TEST_ROOT to a /tmp/fragments-… directory");
-}
+const root = await testRoot(process.env.FRAGMENTS_TEST_ROOT);
 
 const vault = join(root, "Fragments Test");
 const profile = join(root, "profile");
 const plugin = join(vault, ".obsidian/plugins/fragments");
+await mkdir(root, { recursive: true });
+// Preparation is for a fresh fixture; reuse its running session without
+// preparing it again. Exclusive mkdir also refuses vault/profile symlinks.
+await mkdir(vault);
+await mkdir(profile);
 await mkdir(join(vault, "Fragments/Examples"), { recursive: true });
 await mkdir(plugin, { recursive: true });
-await mkdir(profile, { recursive: true });
 
 const note = (title, tags, starred, language, body) =>
   `---\ntitle: ${title}\ntags: [${tags}]\nstarred: ${starred}\nlanguage: ${language}\n---\n\n${body}`;
