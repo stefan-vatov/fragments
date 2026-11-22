@@ -1,3 +1,4 @@
+import { Effect, Either, Option } from "effect";
 import {
   type CSSProperties,
   type Dispatch,
@@ -41,6 +42,9 @@ import type { Fragment, FragmentLibrary } from "./library";
 import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
 import { indexFragments, matchScore, searchFragments, type SearchScope } from "./search";
+
+const attempt = <A,>(operation: () => Promise<A>): Promise<Either.Either<A, unknown>> =>
+  Effect.runPromise(Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })));
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -165,13 +169,16 @@ function useKeyboard(
     // run preventDefault, but the event still reaches a later window listener.
     const listener = onKey as EventListener;
     const windowTarget = doc.defaultView;
-    try {
-      if (windowTarget) {
-        windowTarget.addEventListener("keydown", listener, true);
-        return () => windowTarget.removeEventListener("keydown", listener, true);
-      }
-    } catch {
-      // A view facade in tests may expose a window without listener methods.
+    if (windowTarget) {
+      const attached = Effect.runSync(
+        Effect.either(
+          Effect.try(() => {
+            windowTarget.addEventListener("keydown", listener, true);
+            return () => windowTarget.removeEventListener("keydown", listener, true);
+          }),
+        ),
+      );
+      if (Either.isRight(attached)) return attached.right;
     }
     doc.addEventListener("keydown", listener, true);
     return () => doc.removeEventListener("keydown", listener, true);
@@ -367,15 +374,21 @@ function useDraft(
     async (notify = true) => {
       let writing = pendingDraft.current;
       if (!writing || writing.owner !== owner) return;
-      try {
+      const operation = (async () => {
         while (writing?.owner === owner) {
           await library.saveBody(writing.path, writing.text, writing.expected, writing.owner);
           saved(writing);
           writing = pendingDraft.current;
         }
         if (notify) new Notice("Fragment saved");
-      } catch (error) {
-        if (!notify) throw error;
+      })();
+      const result = await attempt(() => operation);
+      if (Either.isLeft(result)) {
+        const error = result.left;
+        if (!notify) {
+          await operation;
+          return;
+        }
         const failed = pendingDraft.current;
         if (failed && library.fileStamp(failed.path) === undefined) {
           setRecovered({ path: failed.path, text: failed.text });
@@ -721,14 +734,15 @@ function useFragmentMutations({
   view,
 }: FragmentMutations) {
   const mutations = useRef<Promise<void>>(Promise.resolve());
-  const captureFile = (path: string): TFile => {
+  const captureFile = (path: string): Either.Either<TFile, Error> => {
     // An external rename moves the file; the mutation addressed to the old path
     // must land on the file that exists now.
     const current = app.vault.getAbstractFileByPath(library.relocation(path) ?? path);
-    if (current instanceof TFile) return current;
+    if (current instanceof TFile) return Either.right(current);
     const pending = [...(transitioning.get(path)?.keys() ?? [])].at(-1);
-    if (pending) return pending;
-    throw new Error("Fragment is no longer available.");
+    return pending
+      ? Either.right(pending)
+      : Either.left(new Error("Fragment is no longer available."));
   };
   const enqueue = (task: () => Promise<void>): Promise<void> => {
     const run = mutations.current.then(task, task);
@@ -748,13 +762,11 @@ function useFragmentMutations({
     const pending = files.get(file);
     if (pending) pending.count++;
     else files.set(file, { item, count: 1 });
-    try {
-      await enqueue(task);
-    } finally {
+    await enqueue(task).finally(() => {
       const active = files.get(file);
       if (active && --active.count === 0) files.delete(file);
       if (!files.size) transitioning.delete(item.path);
-    }
+    });
   };
   const selectRelocated = (
     source: string,
@@ -789,12 +801,16 @@ function useFragmentMutations({
     const source = selectedItem.path;
     const starred = !(starIntent.current.get(source) ?? selectedItem.starred);
     starIntent.current.set(source, starred);
-    try {
-      const file = captureFile(source);
+    const result = await attempt(async () => {
+      const file = await Either.match(captureFile(source), {
+        onLeft: (error) => Promise.reject(error),
+        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      });
       await enqueue(() => library.updateProperties(file.path, { starred }));
-    } catch (error) {
+    });
+    if (Either.isLeft(result)) {
       starIntent.current.delete(source);
-      errorNotice(error as Error);
+      errorNotice(result.left as Error);
     }
   };
   const updateTags = async (value: string, path?: string): Promise<void> => {
@@ -809,12 +825,14 @@ function useFragmentMutations({
           .filter(Boolean),
       ),
     ];
-    try {
-      const file = captureFile(source);
+    const result = await attempt(async () => {
+      const file = await Either.match(captureFile(source), {
+        onLeft: (error) => Promise.reject(error),
+        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      });
       await enqueue(() => library.updateProperties(file.path, { tags }));
-    } catch (error) {
-      errorNotice(error as Error);
-    }
+    });
+    if (Either.isLeft(result)) errorNotice(result.left as Error);
   };
   const rename = async (value: string): Promise<boolean> => {
     if (!selectedItem || value.trim() === selectedItem.title) {
@@ -822,8 +840,11 @@ function useFragmentMutations({
       return false;
     }
     const source = selectedItem.path;
-    try {
-      const file = captureFile(source);
+    const result = await attempt(async () => {
+      const file = await Either.match(captureFile(source), {
+        onLeft: (error) => Promise.reject(error),
+        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      });
       await transition(selectedItem, file, async () => {
         await save(false);
         const previous = file.path;
@@ -832,7 +853,9 @@ function useFragmentMutations({
       });
       setTitleRejected(false);
       return true;
-    } catch (error) {
+    });
+    if (Either.isLeft(result)) {
+      const error = result.left;
       setTitleRejected(true);
       errorNotice(error as Error);
       // A failed title write still leaves the file at its new path; keep the
@@ -849,12 +872,16 @@ function useFragmentMutations({
       );
       return false;
     }
+    return result.right;
   };
   const move = async (value: string, titleDraft?: string): Promise<void> => {
     if (!selectedItem || value === selectedItem.collection) return;
     const source = selectedItem.path;
-    try {
-      const file = captureFile(source);
+    const result = await attempt(async () => {
+      const file = await Either.match(captureFile(source), {
+        onLeft: (error) => Promise.reject(error),
+        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      });
       await transition(selectedItem, file, async () => {
         await save(false);
         let previous = file.path;
@@ -868,7 +895,9 @@ function useFragmentMutations({
         const next = await library.move(previous, value);
         selectRelocated(source, previous, file, next);
       });
-    } catch (error) {
+    });
+    if (Either.isLeft(result)) {
+      const error = result.left;
       errorNotice(error as Error);
       if (error instanceof TitleWriteError) {
         const nextPath = error.nextPath;
@@ -885,8 +914,11 @@ function useFragmentMutations({
   const trash = async (): Promise<void> => {
     if (!selectedItem || !windowOf(view).confirm(`Move “${selectedItem.title}” to trash?`)) return;
     const source = selectedItem.path;
-    try {
-      const file = captureFile(source);
+    const result = await attempt(async () => {
+      const file = await Either.match(captureFile(source), {
+        onLeft: (error) => Promise.reject(error),
+        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      });
       await enqueue(async () => {
         // Persist the open draft before the file goes away; a failed save
         // aborts the trash rather than silently dropping the edits.
@@ -901,9 +933,8 @@ function useFragmentMutations({
           .querySelector<HTMLInputElement>('[aria-label="Fragment title"]')
           ?.focus();
       });
-    } catch (error) {
-      errorNotice(error as Error);
-    }
+    });
+    if (Either.isLeft(result)) errorNotice(result.left as Error);
   };
   useEffect(() => {
     setTitleRejected(false);
@@ -1029,23 +1060,24 @@ function useController({ plugin, view, handle }: Props) {
     if (creationPending.current) return;
     creationPending.current = true;
     setCreating(true);
-    try {
-      await waitForMutations();
-      const path = await library.create(scope.kind === "collection" ? scope.value : "");
-      setCreationRevision((current) => current + 1);
-      setScope(scope.kind === "collection" ? scope : { kind: "all" });
-      setQuery("");
-      setTagFilter("");
-      setSelected(path);
-      setMode("edit");
-      setMobilePane("editor");
-      setDialog(null);
-    } catch (error) {
-      errorNotice(error as Error);
-    } finally {
+    await (async () => {
+      const result = await attempt(async () => {
+        await waitForMutations();
+        const path = await library.create(scope.kind === "collection" ? scope.value : "");
+        setCreationRevision((current) => current + 1);
+        setScope(scope.kind === "collection" ? scope : { kind: "all" });
+        setQuery("");
+        setTagFilter("");
+        setSelected(path);
+        setMode("edit");
+        setMobilePane("editor");
+        setDialog(null);
+      });
+      if (Either.isLeft(result)) errorNotice(result.left as Error);
+    })().finally(() => {
       creationPending.current = false;
       setCreating(false);
-    }
+    });
   }, [library, scope, waitForMutations]);
 
   useEffect(() => {
@@ -1086,12 +1118,11 @@ function useController({ plugin, view, handle }: Props) {
   const copy = async (): Promise<void> => {
     // Nothing has loaded yet: writing now would replace the clipboard with "".
     if (!draftReady) return;
-    try {
+    const result = await attempt(async () => {
       await windowOf(view).navigator.clipboard.writeText(draft);
       new Notice("Copied fragment");
-    } catch (error) {
-      errorNotice(error as Error);
-    }
+    });
+    if (Either.isLeft(result)) errorNotice(result.left as Error);
   };
 
   const paletteItems = dialog === "palette" ? paletteResults(entries, paletteQuery) : [];
@@ -1231,26 +1262,29 @@ function useCollectionCreate(
     busy.current = true;
     setCollectionPending(true);
     setCollectionError(null);
-    try {
-      await library.createCollection(name);
-      setNewCollection("");
-      setDialog(null);
-    } catch (error) {
-      // The dialog stays open, so the reason belongs next to the field rather
-      // than in a notice the user can miss.
-      setCollectionError(error instanceof Error ? error.message : String(error));
-    } finally {
+    await (async () => {
+      const result = await attempt(async () => {
+        await library.createCollection(name);
+        setNewCollection("");
+        setDialog(null);
+      });
+      if (Either.isLeft(result)) {
+        const error = result.left;
+        setCollectionError(error instanceof Error ? error.message : String(error));
+      }
+    })().finally(() => {
       busy.current = false;
       setCollectionPending(false);
-    }
+    });
   };
   return { createCollection, collectionPending, collectionError, resetCollectionError };
 }
 
 function useAppContext(): Controller {
-  const context = useContext(AppContext);
-  if (!context) throw new Error("Fragments app context is missing.");
-  return context;
+  return Option.getOrThrowWith(
+    Option.fromNullable(useContext(AppContext)),
+    () => new Error("Fragments app context is missing."),
+  );
 }
 
 // The pane layout follows the leaf's own width: a Fragments tab in a narrow

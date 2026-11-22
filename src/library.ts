@@ -1,5 +1,12 @@
-import { Option, Schema } from "effect";
-import { getFrontMatterInfo, normalizePath, TFile, TFolder, type App } from "obsidian";
+import { Effect, Either, Option, Schema } from "effect";
+import {
+  getFrontMatterInfo,
+  normalizePath,
+  TFile,
+  TFolder,
+  type App,
+  type TAbstractFile,
+} from "obsidian";
 
 export interface Fragment {
   path: string;
@@ -64,12 +71,62 @@ const plainPreview = (body: string): string =>
     .trim()
     .slice(0, 140);
 const run = async <A>(operation: () => Promise<A>): Promise<A> => {
-  try {
-    return await operation();
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
-  }
+  const result = await Effect.runPromise(
+    Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })),
+  );
+  if (Either.isRight(result)) return result.right;
+  return Promise.reject(
+    result.left instanceof Error ? result.left : new Error(String(result.left)),
+  );
 };
+const toPromise = <A>(result: Either.Either<A, Error>): Promise<A> =>
+  Either.match(result, {
+    onLeft: (error) => Promise.reject(error),
+    onRight: (value) => Promise.resolve(value),
+  });
+
+const validateSegments = (segments: string[]): Either.Either<string[], Error> =>
+  segments.some((segment) => segment === "." || segment === "..")
+    ? Either.left(new Error("Collection names cannot contain “.” or “..” segments."))
+    : Either.right(segments);
+
+const scratchpadFile = (file: TAbstractFile): Either.Either<TFile, Error> =>
+  file instanceof TFile
+    ? Either.right(file)
+    : Either.left(new Error("The scratchpad path is not a Markdown file."));
+
+const renameTitle = (title: string): Either.Either<string, Error> => {
+  const requested = title.trim().replace(/\.md$/i, "").trim();
+  return requested ? Either.right(requested) : Either.left(new Error("Enter a title."));
+};
+
+const renameDestination = (path: string, scratchpad: string): Either.Either<string, Error> => {
+  if (utf8Length(path.slice(path.lastIndexOf("/") + 1)) > 252)
+    return Either.left(new Error("That title is too long for a file name."));
+  return path.toLowerCase() === scratchpad.toLowerCase()
+    ? Either.left(new Error("That title is reserved for the scratchpad."))
+    : Either.right(path);
+};
+
+const moveDestination = (path: string, scratchpad: string): Either.Either<string, Error> =>
+  path.toLowerCase() === scratchpad.toLowerCase()
+    ? Either.left(new Error("That filename is reserved for the scratchpad."))
+    : Either.right(path);
+
+const collectionPath = (name: string): Either.Either<string, Error> => {
+  const segments = name
+    .split("/")
+    .map((segment) => segment.trim().replace(/[\\:*?"<>|]/g, "-"))
+    .filter(Boolean);
+  return Either.flatMap(validateSegments(segments), (parts) => {
+    const path = parts.join("/");
+    if (!path) return Either.left(new Error("Enter a collection name."));
+    if (parts.some((part) => utf8Length(part) > 200))
+      return Either.left(new Error("Collection names must be 200 characters or fewer per folder."));
+    return Either.right(path);
+  });
+};
+
 const decodeString = Schema.decodeUnknownOption(Schema.String);
 const decodeBoolean = Schema.decodeUnknownOption(Schema.Boolean);
 const decodeBooleanText = Schema.decodeUnknownOption(
@@ -345,7 +402,9 @@ export class FragmentLibrary {
   async read(path: string): Promise<string> {
     // Switching back to a note must read after its queued draft saves finish.
     await this.pending.get(path)?.catch(() => undefined);
-    const file = this.file(path);
+    const fileResult = this.file(path);
+    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
+    const file = fileResult.right;
     return bodyOf(await run(() => this.app.vault.cachedRead(file)));
   }
 
@@ -356,24 +415,30 @@ export class FragmentLibrary {
     await this.pending.get(path)?.catch(() => undefined);
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!file) return "";
-    if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
-    return run(() => this.app.vault.read(file));
+    const checked = scratchpadFile(file);
+    if (Either.isLeft(checked)) return Promise.reject(checked.left);
+    return run(() => this.app.vault.read(checked.right));
   }
 
   async saveScratchpad(path: string, text: string, expected: string): Promise<void> {
     await this.queue(path, async () => {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!file) {
-        if (expected) throw new Error("The scratchpad file was removed outside Fragments.");
+        const state = expected
+          ? Either.left(new Error("The scratchpad file was removed outside Fragments."))
+          : Either.right(undefined);
+        await toPromise(state);
         await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
         await run(() => this.app.vault.create(path, text));
         return;
       }
-      if (!(file instanceof TFile)) throw new Error("The scratchpad path is not a Markdown file.");
+      const checked = await toPromise(scratchpadFile(file));
       await run(() =>
-        this.app.vault.process(file, (source) => {
-          if (source !== expected) throw new ScratchpadConflictError();
-          return text;
+        this.app.vault.process(checked, (source) => {
+          return Either.getOrThrowWith(
+            source !== expected ? Either.left(new ScratchpadConflictError()) : Either.right(text),
+            (error) => error,
+          );
         }),
       );
     });
@@ -403,7 +468,9 @@ export class FragmentLibrary {
     owner?: DraftIdentity,
   ): Promise<void> {
     await this.queue(path, async () => {
-      const file = this.file(path);
+      const fileResult = this.file(path);
+      if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
+      const file = fileResult.right;
       await run(() =>
         this.app.vault.process(file, (source) => {
           // The caller's snapshot may predate a write this library already
@@ -419,11 +486,7 @@ export class FragmentLibrary {
             written.body === current &&
             owner !== undefined &&
             written.owner === owner;
-          if (expectedBody !== undefined && current !== expectedBody && !ownWrite) {
-            throw new Error(
-              "This note changed outside Fragments. Copy your draft, then reopen the note before saving.",
-            );
-          }
+          const conflict = expectedBody !== undefined && current !== expectedBody && !ownWrite;
           const info = getFrontMatterInfo(source);
           const header = info.exists ? source.slice(0, info.contentStart) : "";
           // Reuse the separator the note already had. Adding one unconditionally
@@ -438,7 +501,14 @@ export class FragmentLibrary {
               : info.exists && after.length === 0
                 ? "\n"
                 : "";
-          return `${header}${separator}${body}`;
+          const result = conflict
+            ? Either.left(
+                new Error(
+                  "This note changed outside Fragments. Copy your draft, then reopen the note before saving.",
+                ),
+              )
+            : Either.right(`${header}${separator}${body}`);
+          return Either.getOrThrowWith(result, (error) => error);
         }),
       );
       this.written.set(path, { body, owner });
@@ -452,7 +522,9 @@ export class FragmentLibrary {
     changes: { tags?: string[]; starred?: boolean; language?: string },
   ): Promise<void> {
     await this.queue(path, async () => {
-      const file = this.file(path);
+      const fileResult = this.file(path);
+      if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
+      const file = fileResult.right;
       const previous = this.fragments.get(path)?.modified;
       await run(() =>
         this.app.fileManager.processFrontMatter(file, (matter) => {
@@ -468,23 +540,17 @@ export class FragmentLibrary {
   }
 
   async rename(path: string, title: string): Promise<string> {
-    const file = this.file(path);
+    const fileResult = this.file(path);
+    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
+    const file = fileResult.right;
     // The title doubles as the file base and availablePath appends ".md", so a
     // pasted "Notes.md" must not become "Notes.md.md".
-    const requested = title.trim().replace(/\.md$/i, "").trim();
-    if (!requested) throw new Error("Enter a title.");
+    const requested = await toPromise(renameTitle(title));
     const parent = file.parent?.path ?? this.folder();
     const unique = this.availableTitle(requested, path);
     const safe = safeFileName(unique);
     const next = this.availablePath(parent, safe, file);
-    // Most filesystems cap a name at 255 bytes; refuse before the rename so the
-    // UI can report a validation error instead of an ENAMETOOLONG from the OS.
-    if (utf8Length(next.slice(next.lastIndexOf("/") + 1)) > 252)
-      throw new Error("That title is too long for a file name.");
-    // Check the final, de-duplicated path: an already-taken reserved title
-    // becomes "_fragments-scratchpad (1)" and cannot collide with the pad file.
-    if (next.toLowerCase() === this.scratchpadPath().toLowerCase())
-      throw new Error("That title is reserved for the scratchpad.");
+    await toPromise(renameDestination(next, this.scratchpadPath()));
     if (next !== path) {
       await run(() => this.app.fileManager.renameFile(file, next));
       // The file has moved, so re-index it before touching the frontmatter: a
@@ -493,19 +559,26 @@ export class FragmentLibrary {
       this.remove(path);
       await this.refresh(file);
     }
-    try {
-      await run(() =>
-        this.app.fileManager.processFrontMatter(file, (matter) => {
-          const frontmatter = matter as { title?: string };
-          frontmatter.title = unique;
+    const titleResult = await Effect.runPromise(
+      Effect.either(
+        Effect.tryPromise({
+          try: () =>
+            this.app.fileManager.processFrontMatter(file, (matter) => {
+              const frontmatter = matter as { title?: string };
+              frontmatter.title = unique;
+            }),
+          catch: (error) => error,
         }),
-      );
-    } catch (error) {
+      ),
+    );
+    if (Either.isLeft(titleResult)) {
+      const error = titleResult.left;
       const reason = error instanceof Error ? error.message : String(error);
-      // The file already moved; report where it lives so the UI can follow it.
-      throw new TitleWriteError(
-        `The note was renamed, but its title was not saved: ${reason}`,
-        file.path,
+      return Promise.reject(
+        new TitleWriteError(
+          `The note was renamed, but its title was not saved: ${reason}`,
+          file.path,
+        ),
       );
     }
     await this.refresh(file);
@@ -513,7 +586,9 @@ export class FragmentLibrary {
   }
 
   async move(path: string, collection: string): Promise<string> {
-    const file = this.file(path);
+    const fileResult = this.file(path);
+    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
+    const file = fileResult.right;
     const folder = collection ? `${this.folder()}/${collection}` : this.folder();
     await this.ensureFolder(folder);
     const requestedPath = `${folder}/${file.name}`;
@@ -522,26 +597,32 @@ export class FragmentLibrary {
     const unique = occupied && occupied !== file ? this.availableTitle(title, path) : title;
     const base = unique === title ? safeFileName(file.basename) : safeFileName(unique);
     const next = this.availablePath(folder, base, file);
-    // Only the final path matters: a name that gets suffixed is not the pad file.
-    if (next.toLowerCase() === this.scratchpadPath().toLowerCase())
-      throw new Error("That filename is reserved for the scratchpad.");
+    await toPromise(moveDestination(next, this.scratchpadPath()));
     if (next === path) return path;
     await run(() => this.app.fileManager.renameFile(file, next));
     this.remove(path);
     await this.refresh(file);
     if (unique !== title) {
-      try {
-        await run(() =>
-          this.app.fileManager.processFrontMatter(file, (matter) => {
-            const frontmatter = matter as { title?: string };
-            frontmatter.title = unique;
+      const titleResult = await Effect.runPromise(
+        Effect.either(
+          Effect.tryPromise({
+            try: () =>
+              this.app.fileManager.processFrontMatter(file, (matter) => {
+                const frontmatter = matter as { title?: string };
+                frontmatter.title = unique;
+              }),
+            catch: (error) => error,
           }),
-        );
-      } catch (error) {
+        ),
+      );
+      if (Either.isLeft(titleResult)) {
+        const error = titleResult.left;
         const reason = error instanceof Error ? error.message : String(error);
-        throw new TitleWriteError(
-          `The note was moved, but its title was not saved: ${reason}`,
-          file.path,
+        return Promise.reject(
+          new TitleWriteError(
+            `The note was moved, but its title was not saved: ${reason}`,
+            file.path,
+          ),
         );
       }
       await this.refresh(file);
@@ -550,33 +631,21 @@ export class FragmentLibrary {
   }
 
   async trash(path: string): Promise<void> {
-    await run(() => this.app.fileManager.trashFile(this.file(path)));
+    const file = this.file(path);
+    if (Either.isLeft(file)) return Promise.reject(file.left);
+    await run(() => this.app.fileManager.trashFile(file.right));
     this.remove(path);
   }
 
   async createCollection(name: string): Promise<void> {
-    // create() and move() treat a collection as a real nested path, so the
-    // dialog must too: sanitise each segment instead of flattening "/" to "-".
-    const segments = name
-      .split("/")
-      .map((segment) => segment.trim().replace(/[\\:*?"<>|]/g, "-"))
-      .filter(Boolean);
-    // A "." or ".." segment escapes the library root once it reaches the vault
-    // API, so reject it instead of creating a traversal path.
-    if (segments.some((segment) => segment === "." || segment === ".."))
-      throw new Error("Collection names cannot contain “.” or “..” segments.");
-    const path = segments.join("/");
-    if (!path) throw new Error("Enter a collection name.");
-    // A folder name has the same filesystem byte limit as a file name; check it
-    // here so the dialog can explain the refusal instead of surfacing ENAMETOOLONG.
-    if (segments.some((segment) => utf8Length(segment) > 200))
-      throw new Error("Collection names must be 200 characters or fewer per folder.");
+    const path = await toPromise(collectionPath(name));
     const target = `${this.folder()}/${path}`;
-    // ensureFolder skips every existing path, including files, so a name that
-    // collides with a note (or the scratchpad) would silently do nothing.
     const existing = this.app.vault.getAbstractFileByPath(target);
-    if (existing && !(existing instanceof TFolder))
-      throw new Error("A file with that name already exists.");
+    const available =
+      existing && !(existing instanceof TFolder)
+        ? Either.left(new Error("A file with that name already exists."))
+        : Either.right(target);
+    await toPromise(available);
     await this.ensureFolder(target);
     this.emit();
   }
@@ -613,8 +682,12 @@ export class FragmentLibrary {
 
   async changeFolder(folder: string): Promise<void> {
     const requested = cleanFolder(folder) || "Fragments";
-    const existing = this.existingFolder(requested);
-    if (!existing) throw new Error(`The folder “${requested}” does not exist in this vault.`);
+    const found = this.existingFolder(requested);
+    const existing = await toPromise(
+      found
+        ? Either.right(found)
+        : Either.left(new Error(`The folder “${requested}” does not exist in this vault.`)),
+    );
     // Re-entering the folder that is already active (same path, different case or
     // trailing whitespace) must not clear and re-read the whole library.
     if (existing === this.settings.folder) return;
@@ -696,21 +769,30 @@ export class FragmentLibrary {
     const sequence = (this.reads.get(path) ?? 0) + 1;
     this.reads.set(path, sequence);
     this.reading.add(path);
-    try {
-      const body = bodyOf(await this.app.vault.cachedRead(file));
-      // Reads for one path can finish out of order. Only the newest read may
-      // replace the preview and the body search index.
-      if (this.reads.get(path) !== sequence) return;
-      const item = this.fragments.get(path);
-      if (!item) return;
-      this.bodyIndex.set(file.path, body);
-      this.bodyStamps.set(file.path, stamp);
-      this.failedIndex.delete(path);
-      this.retryCounts.delete(path);
-      item.preview = plainPreview(body);
-      item.searchText =
-        `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
-    } catch {
+    await (async () => {
+      const result = await Effect.runPromise(
+        Effect.either(
+          Effect.tryPromise({
+            try: async () => {
+              const body = bodyOf(await this.app.vault.cachedRead(file));
+              // Reads for one path can finish out of order. Only the newest read may
+              // replace the preview and the body search index.
+              if (this.reads.get(path) !== sequence) return;
+              const item = this.fragments.get(path);
+              if (!item) return;
+              this.bodyIndex.set(file.path, body);
+              this.bodyStamps.set(file.path, stamp);
+              this.failedIndex.delete(path);
+              this.retryCounts.delete(path);
+              item.preview = plainPreview(body);
+              item.searchText =
+                `${item.title} ${item.collection} ${item.tags.join(" ")} ${body}`.toLowerCase();
+            },
+            catch: (error) => error,
+          }),
+        ),
+      );
+      if (Either.isRight(result)) return;
       // A file may disappear while the background index is reading it, or a
       // transient failure leaves the preview empty. Retry a bounded number of
       // times, then stop: a permanently unreadable file must not schedule reads
@@ -727,9 +809,9 @@ export class FragmentLibrary {
         this.retryTimers.delete(path);
         void this.indexBody(file);
       }, 1_000);
-    } finally {
+    })().finally(() => {
       this.reading.delete(path);
-    }
+    });
   }
 
   // Follow recorded moves to the file that exists now, with a visited set so a
@@ -746,19 +828,15 @@ export class FragmentLibrary {
     return current;
   }
 
-  private file(path: string): TFile {
+  private file(path: string): Either.Either<TFile, Error> {
     const file = this.app.vault.getAbstractFileByPath(this.resolvePath(path));
-    if (!(file instanceof TFile) || !this.contains(file.path))
-      throw new Error("Fragment is no longer available.");
-    return file;
+    return file instanceof TFile && this.contains(file.path)
+      ? Either.right(file)
+      : Either.left(new Error("Fragment is no longer available."));
   }
 
   private async ensureFolder(path: string): Promise<void> {
-    const parts = path.split("/");
-    // A "." or ".." segment escapes the library root once it reaches the vault
-    // API; reject it here as the last line of defence.
-    if (parts.some((part) => part === "." || part === ".."))
-      throw new Error("Collection names cannot contain “.” or “..” segments.");
+    const parts = await toPromise(validateSegments(path.split("/")));
     for (let count = 1; count <= parts.length; count++) {
       const part = parts.slice(0, count).join("/");
       if (!this.app.vault.getAbstractFileByPath(part)) {
@@ -773,11 +851,9 @@ export class FragmentLibrary {
     const previous = this.pending.get(path) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
     this.pending.set(path, current);
-    try {
-      await current;
-    } finally {
+    await current.finally(() => {
       if (this.pending.get(path) === current) this.pending.delete(path);
-    }
+    });
   }
 
   private emit(): void {

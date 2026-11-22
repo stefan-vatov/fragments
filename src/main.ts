@@ -1,3 +1,4 @@
+import { Effect, Either } from "effect";
 import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile, TFolder } from "obsidian";
 import { FragmentLibrary } from "./library";
 import {
@@ -190,25 +191,32 @@ export default class FragmentsPlugin extends Plugin {
 
   private async openView(reveal: boolean): Promise<WorkspaceLeaf | undefined> {
     if (this.unloaded) return undefined;
-    try {
-      const workspace = this.app.workspace;
-      const leaves = workspace.getLeavesOfType(FRAGMENTS_VIEW);
-      // A restored workspace keeps the leaf where the user docked it; only an
-      // explicit open moves it into the app window.
-      const leaf = this.prepareLeaf(leaves, !reveal);
-      if (!(leaf.view instanceof FragmentsView))
-        await leaf.setViewState({ type: FRAGMENTS_VIEW, active: reveal });
-      if (reveal) {
-        await workspace.revealLeaf(leaf);
-        // Only an explicit open collapses duplicates; a restored workspace
-        // keeps the leaves the user deliberately placed in several windows.
-        for (const duplicate of leaves) if (duplicate !== leaf) duplicate.detach();
-      }
-      return leaf;
-    } catch {
-      new Notice("Fragments could not open.");
-      return undefined;
-    }
+    const result = await Effect.runPromise(
+      Effect.either(
+        Effect.tryPromise({
+          try: async () => {
+            const workspace = this.app.workspace;
+            const leaves = workspace.getLeavesOfType(FRAGMENTS_VIEW);
+            // A restored workspace keeps the leaf where the user docked it; only an
+            // explicit open moves it into the app window.
+            const leaf = this.prepareLeaf(leaves, !reveal);
+            if (!(leaf.view instanceof FragmentsView))
+              await leaf.setViewState({ type: FRAGMENTS_VIEW, active: reveal });
+            if (reveal) {
+              await workspace.revealLeaf(leaf);
+              // Only an explicit open collapses duplicates; a restored workspace
+              // keeps the leaves the user deliberately placed in several windows.
+              for (const duplicate of leaves) if (duplicate !== leaf) duplicate.detach();
+            }
+            return leaf;
+          },
+          catch: (error) => error,
+        }),
+      ),
+    );
+    if (Either.isRight(result)) return result.right;
+    new Notice("Fragments could not open.");
+    return undefined;
   }
 
   private prepareLeaf(leaves: WorkspaceLeaf[], keepDock = false): WorkspaceLeaf {

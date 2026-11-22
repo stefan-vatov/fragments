@@ -7,10 +7,13 @@ import {
   type FuzzyMatch,
   type TextComponent,
 } from "obsidian";
-import { Option, Schema } from "effect";
+import { Effect, Either, Option, Schema } from "effect";
 import { FolderSuggest } from "./folder-suggest";
 import type { LibrarySettings } from "./library";
 import type FragmentsPlugin from "./main";
+
+const attempt = <A>(operation: () => Promise<A>): Promise<Either.Either<A, unknown>> =>
+  Effect.runPromise(Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })));
 
 export type SnippetFont = "monospace" | "text" | "interface" | "serif" | "custom";
 
@@ -191,29 +194,32 @@ export class FragmentsSettingTab extends PluginSettingTab {
     if (requested === this.plugin.settings.folder) return;
     const previous = this.plugin.settings.folder;
     text.inputEl.disabled = true;
-    try {
-      await this.plugin.flushDrafts();
-    } catch (error) {
+    const flushed = await attempt(() => this.plugin.flushDrafts());
+    if (Either.isLeft(flushed)) {
       text.inputEl.disabled = false;
       text.setValue(previous);
-      new Notice(`Save the open draft before changing the Fragments folder: ${String(error)}`);
+      new Notice(
+        `Save the open draft before changing the Fragments folder: ${String(flushed.left)}`,
+      );
       return;
     }
-    try {
-      await this.plugin.library.changeFolder(requested);
-      await this.plugin.saveSettings();
-      text.setValue(this.plugin.settings.folder);
-    } catch (error) {
-      try {
-        await this.plugin.library.changeFolder(previous);
-      } catch (restoreError) {
-        new Notice(`Could not reload the previous library: ${String(restoreError)}`);
+    await (async () => {
+      const changed = await attempt(async () => {
+        await this.plugin.library.changeFolder(requested);
+        await this.plugin.saveSettings();
+        text.setValue(this.plugin.settings.folder);
+      });
+      if (Either.isLeft(changed)) {
+        const restored = await attempt(() => this.plugin.library.changeFolder(previous));
+        if (Either.isLeft(restored)) {
+          new Notice(`Could not reload the previous library: ${String(restored.left)}`);
+        }
+        text.setValue(previous);
+        new Notice(`Could not change the Fragments folder: ${String(changed.left)}`);
       }
-      text.setValue(previous);
-      new Notice(`Could not change the Fragments folder: ${String(error)}`);
-    } finally {
+    })().finally(() => {
       text.inputEl.disabled = false;
-    }
+    });
   }
 
   private async openFontPicker(): Promise<void> {
@@ -222,13 +228,14 @@ export class FragmentsSettingTab extends PluginSettingTab {
     };
     let families: string[] = [];
     if (fontWindow.queryLocalFonts) {
-      try {
-        const fonts = await fontWindow.queryLocalFonts();
-        families = [...new Set(fonts.map((font) => font.family).filter(Boolean))].sort((a, b) =>
-          a.localeCompare(b),
+      const query = fontWindow.queryLocalFonts;
+      const result = await attempt(() => query.call(fontWindow));
+      if (Either.isRight(result)) {
+        families = [...new Set(result.right.map((font) => font.family).filter(Boolean))].sort(
+          (a, b) => a.localeCompare(b),
         );
-      } catch (error) {
-        new Notice(`Could not list installed fonts: ${String(error)}`);
+      } else {
+        new Notice(`Could not list installed fonts: ${String(result.left)}`);
       }
     }
     const choices = [
@@ -247,12 +254,11 @@ export class FragmentsSettingTab extends PluginSettingTab {
     const previousFamily = this.plugin.settings.customSnippetFont;
     this.plugin.settings.snippetFont = choice.font;
     if (choice.family) this.plugin.settings.customSnippetFont = choice.family;
-    try {
-      await this.plugin.saveSettings();
-    } catch (error) {
+    const result = await attempt(() => this.plugin.saveSettings());
+    if (Either.isLeft(result)) {
       this.plugin.settings.snippetFont = previousFont;
       this.plugin.settings.customSnippetFont = previousFamily;
-      new Notice(`Could not save the snippet font: ${String(error)}`);
+      new Notice(`Could not save the snippet font: ${String(result.left)}`);
     }
     this.display();
   }
