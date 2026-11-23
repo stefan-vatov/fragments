@@ -62,7 +62,7 @@
     "esbuild": "^0.28.2",
     "jsdom": "^31.0.1",
     "obsidian": "1.14.4",
-    "oxfmt": "^0.43.0",
+    "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
     "oxlint-tsgolint": "^7.0.2008",
     "semantic-release": "^25.0.9",
