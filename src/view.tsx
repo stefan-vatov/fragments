@@ -38,8 +38,7 @@ export interface FragmentsViewState {
 // What the view serialises into Obsidian's workspace file. The index signature
 // keeps it assignable to the base `View.getState()` contract.
 export interface SerializedFragmentsState {
-  // Obsidian's workspace contract is an open dictionary; only `fragments` is ours.
-  // oxlint-disable-next-line thethracian/no-unsafe-dictionary-type
+  // oxlint-disable-next-line thethracian/no-unsafe-dictionary-type -- Obsidian's workspace contract is an open dictionary; only `fragments` is ours.
   [key: string]: unknown;
   fragments: FragmentsViewState;
 }

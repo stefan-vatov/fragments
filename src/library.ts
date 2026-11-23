@@ -203,7 +203,12 @@ function parseMetadata(raw: RawFrontmatter | undefined): ParsedMetadata {
     // so a repeated tag would show twice and inflate the sidebar counts. Collapse
     // duplicates after canonicalisation, keeping first-occurrence order.
     tags: [
-      ...new Set(values.map((tag) => tag.trim().replace(/^#/, "").toLowerCase()).filter(Boolean)),
+      ...new Set(
+        values.flatMap((tag) => {
+          const canonical = tag.trim().replace(/^#/, "").toLowerCase();
+          return canonical === "" ? [] : [canonical];
+        }),
+      ),
     ],
     starred:
       starredValue ??
