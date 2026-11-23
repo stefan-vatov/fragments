@@ -1,4 +1,4 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Result, Option } from "effect";
 import {
   type CSSProperties,
   type Dispatch,
@@ -43,8 +43,8 @@ import { snippetFontFamily } from "./settings";
 import { findLanguage, highlightCode, languageLabel, LanguageSuggest } from "./languages";
 import { indexFragments, matchScore, searchFragments, type SearchScope } from "./search";
 
-const attempt = <A,>(operation: () => Promise<A>): Promise<Either.Either<A, unknown>> =>
-  Effect.runPromise(Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })));
+const attempt = <A,>(operation: () => Promise<A>): Promise<Result.Result<A, unknown>> =>
+  Effect.runPromise(Effect.result(Effect.tryPromise({ try: operation, catch: (error) => error })));
 
 export interface ShellHandle {
   createFragment: () => Promise<void>;
@@ -171,14 +171,14 @@ function useKeyboard(
     const windowTarget = doc.defaultView;
     if (windowTarget) {
       const attached = Effect.runSync(
-        Effect.either(
+        Effect.result(
           Effect.try(() => {
             windowTarget.addEventListener("keydown", listener, true);
             return () => windowTarget.removeEventListener("keydown", listener, true);
           }),
         ),
       );
-      if (Either.isRight(attached)) return attached.right;
+      if (Result.isSuccess(attached)) return attached.success;
     }
     doc.addEventListener("keydown", listener, true);
     return () => doc.removeEventListener("keydown", listener, true);
@@ -383,8 +383,8 @@ function useDraft(
         if (notify) new Notice("Fragment saved");
       })();
       const result = await attempt(() => operation);
-      if (Either.isLeft(result)) {
-        const error = result.left;
+      if (Result.isFailure(result)) {
+        const error = result.failure;
         if (!notify) {
           await operation;
           return;
@@ -734,15 +734,15 @@ function useFragmentMutations({
   view,
 }: FragmentMutations) {
   const mutations = useRef<Promise<void>>(Promise.resolve());
-  const captureFile = (path: string): Either.Either<TFile, Error> => {
+  const captureFile = (path: string): Result.Result<TFile, Error> => {
     // An external rename moves the file; the mutation addressed to the old path
     // must land on the file that exists now.
     const current = app.vault.getAbstractFileByPath(library.relocation(path) ?? path);
-    if (current instanceof TFile) return Either.right(current);
+    if (current instanceof TFile) return Result.succeed(current);
     const pending = [...(transitioning.get(path)?.keys() ?? [])].at(-1);
     return pending
-      ? Either.right(pending)
-      : Either.left(new Error("Fragment is no longer available."));
+      ? Result.succeed(pending)
+      : Result.fail(new Error("Fragment is no longer available."));
   };
   const enqueue = (task: () => Promise<void>): Promise<void> => {
     const run = mutations.current.then(task, task);
@@ -802,15 +802,15 @@ function useFragmentMutations({
     const starred = !(starIntent.current.get(source) ?? selectedItem.starred);
     starIntent.current.set(source, starred);
     const result = await attempt(async () => {
-      const file = await Either.match(captureFile(source), {
-        onLeft: (error) => Promise.reject(error),
-        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      const file = await Result.match(captureFile(source), {
+        onFailure: (error) => Promise.reject(error),
+        onSuccess: (capturedFile) => Promise.resolve(capturedFile),
       });
       await enqueue(() => library.updateProperties(file.path, { starred }));
     });
-    if (Either.isLeft(result)) {
+    if (Result.isFailure(result)) {
       starIntent.current.delete(source);
-      errorNotice(result.left as Error);
+      errorNotice(result.failure as Error);
     }
   };
   const updateTags = async (value: string, path?: string): Promise<void> => {
@@ -826,13 +826,13 @@ function useFragmentMutations({
       ),
     ];
     const result = await attempt(async () => {
-      const file = await Either.match(captureFile(source), {
-        onLeft: (error) => Promise.reject(error),
-        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      const file = await Result.match(captureFile(source), {
+        onFailure: (error) => Promise.reject(error),
+        onSuccess: (capturedFile) => Promise.resolve(capturedFile),
       });
       await enqueue(() => library.updateProperties(file.path, { tags }));
     });
-    if (Either.isLeft(result)) errorNotice(result.left as Error);
+    if (Result.isFailure(result)) errorNotice(result.failure as Error);
   };
   const rename = async (value: string): Promise<boolean> => {
     if (!selectedItem || value.trim() === selectedItem.title) {
@@ -841,9 +841,9 @@ function useFragmentMutations({
     }
     const source = selectedItem.path;
     const result = await attempt(async () => {
-      const file = await Either.match(captureFile(source), {
-        onLeft: (error) => Promise.reject(error),
-        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      const file = await Result.match(captureFile(source), {
+        onFailure: (error) => Promise.reject(error),
+        onSuccess: (capturedFile) => Promise.resolve(capturedFile),
       });
       await transition(selectedItem, file, async () => {
         await save(false);
@@ -854,8 +854,8 @@ function useFragmentMutations({
       setTitleRejected(false);
       return true;
     });
-    if (Either.isLeft(result)) {
-      const error = result.left;
+    if (Result.isFailure(result)) {
+      const error = result.failure;
       setTitleRejected(true);
       errorNotice(error as Error);
       // A failed title write still leaves the file at its new path; keep the
@@ -872,15 +872,15 @@ function useFragmentMutations({
       );
       return false;
     }
-    return result.right;
+    return result.success;
   };
   const move = async (value: string, titleDraft?: string): Promise<void> => {
     if (!selectedItem || value === selectedItem.collection) return;
     const source = selectedItem.path;
     const result = await attempt(async () => {
-      const file = await Either.match(captureFile(source), {
-        onLeft: (error) => Promise.reject(error),
-        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      const file = await Result.match(captureFile(source), {
+        onFailure: (error) => Promise.reject(error),
+        onSuccess: (capturedFile) => Promise.resolve(capturedFile),
       });
       await transition(selectedItem, file, async () => {
         await save(false);
@@ -896,8 +896,8 @@ function useFragmentMutations({
         selectRelocated(source, previous, file, next);
       });
     });
-    if (Either.isLeft(result)) {
-      const error = result.left;
+    if (Result.isFailure(result)) {
+      const error = result.failure;
       errorNotice(error as Error);
       if (error instanceof TitleWriteError) {
         const nextPath = error.nextPath;
@@ -915,9 +915,9 @@ function useFragmentMutations({
     if (!selectedItem || !windowOf(view).confirm(`Move “${selectedItem.title}” to trash?`)) return;
     const source = selectedItem.path;
     const result = await attempt(async () => {
-      const file = await Either.match(captureFile(source), {
-        onLeft: (error) => Promise.reject(error),
-        onRight: (capturedFile) => Promise.resolve(capturedFile),
+      const file = await Result.match(captureFile(source), {
+        onFailure: (error) => Promise.reject(error),
+        onSuccess: (capturedFile) => Promise.resolve(capturedFile),
       });
       await enqueue(async () => {
         // Persist the open draft before the file goes away; a failed save
@@ -934,7 +934,7 @@ function useFragmentMutations({
           ?.focus();
       });
     });
-    if (Either.isLeft(result)) errorNotice(result.left as Error);
+    if (Result.isFailure(result)) errorNotice(result.failure as Error);
   };
   useEffect(() => {
     setTitleRejected(false);
@@ -1073,7 +1073,7 @@ function useController({ plugin, view, handle }: Props) {
         setMobilePane("editor");
         setDialog(null);
       });
-      if (Either.isLeft(result)) errorNotice(result.left as Error);
+      if (Result.isFailure(result)) errorNotice(result.failure as Error);
     })().finally(() => {
       creationPending.current = false;
       setCreating(false);
@@ -1122,7 +1122,7 @@ function useController({ plugin, view, handle }: Props) {
       await windowOf(view).navigator.clipboard.writeText(draft);
       new Notice("Copied fragment");
     });
-    if (Either.isLeft(result)) errorNotice(result.left as Error);
+    if (Result.isFailure(result)) errorNotice(result.failure as Error);
   };
 
   const paletteItems = dialog === "palette" ? paletteResults(entries, paletteQuery) : [];
@@ -1268,8 +1268,8 @@ function useCollectionCreate(
         setNewCollection("");
         setDialog(null);
       });
-      if (Either.isLeft(result)) {
-        const error = result.left;
+      if (Result.isFailure(result)) {
+        const error = result.failure;
         setCollectionError(error instanceof Error ? error.message : String(error));
       }
     })().finally(() => {
@@ -1282,7 +1282,7 @@ function useCollectionCreate(
 
 function useAppContext(): Controller {
   return Option.getOrThrowWith(
-    Option.fromNullable(useContext(AppContext)),
+    Option.fromNullishOr(useContext(AppContext)),
     () => new Error("Fragments app context is missing."),
   );
 }

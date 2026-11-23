@@ -1,4 +1,4 @@
-import { Effect, Either, Option, Schema } from "effect";
+import { Effect, Result, Option, Schema } from "effect";
 import {
   getFrontMatterInfo,
   normalizePath,
@@ -72,69 +72,69 @@ const plainPreview = (body: string): string =>
     .slice(0, 140);
 const run = async <A>(operation: () => Promise<A>): Promise<A> => {
   const result = await Effect.runPromise(
-    Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })),
+    Effect.result(Effect.tryPromise({ try: operation, catch: (error) => error })),
   );
-  if (Either.isRight(result)) return result.right;
+  if (Result.isSuccess(result)) return result.success;
   return Promise.reject(
-    result.left instanceof Error ? result.left : new Error(String(result.left)),
+    result.failure instanceof Error ? result.failure : new Error(String(result.failure)),
   );
 };
-const toPromise = <A>(result: Either.Either<A, Error>): Promise<A> =>
-  Either.match(result, {
-    onLeft: (error) => Promise.reject(error),
-    onRight: (value) => Promise.resolve(value),
+const toPromise = <A>(result: Result.Result<A, Error>): Promise<A> =>
+  Result.match(result, {
+    onFailure: (error) => Promise.reject(error),
+    onSuccess: (value) => Promise.resolve(value),
   });
 
-const validateSegments = (segments: string[]): Either.Either<string[], Error> =>
+const validateSegments = (segments: string[]): Result.Result<string[], Error> =>
   segments.some((segment) => segment === "." || segment === "..")
-    ? Either.left(new Error("Collection names cannot contain “.” or “..” segments."))
-    : Either.right(segments);
+    ? Result.fail(new Error("Collection names cannot contain “.” or “..” segments."))
+    : Result.succeed(segments);
 
-const scratchpadFile = (file: TAbstractFile): Either.Either<TFile, Error> =>
+const scratchpadFile = (file: TAbstractFile): Result.Result<TFile, Error> =>
   file instanceof TFile
-    ? Either.right(file)
-    : Either.left(new Error("The scratchpad path is not a Markdown file."));
+    ? Result.succeed(file)
+    : Result.fail(new Error("The scratchpad path is not a Markdown file."));
 
-const renameTitle = (title: string): Either.Either<string, Error> => {
+const renameTitle = (title: string): Result.Result<string, Error> => {
   const requested = title.trim().replace(/\.md$/i, "").trim();
-  return requested ? Either.right(requested) : Either.left(new Error("Enter a title."));
+  return requested ? Result.succeed(requested) : Result.fail(new Error("Enter a title."));
 };
 
-const renameDestination = (path: string, scratchpad: string): Either.Either<string, Error> => {
+const renameDestination = (path: string, scratchpad: string): Result.Result<string, Error> => {
   if (utf8Length(path.slice(path.lastIndexOf("/") + 1)) > 252)
-    return Either.left(new Error("That title is too long for a file name."));
+    return Result.fail(new Error("That title is too long for a file name."));
   return path.toLowerCase() === scratchpad.toLowerCase()
-    ? Either.left(new Error("That title is reserved for the scratchpad."))
-    : Either.right(path);
+    ? Result.fail(new Error("That title is reserved for the scratchpad."))
+    : Result.succeed(path);
 };
 
-const moveDestination = (path: string, scratchpad: string): Either.Either<string, Error> =>
+const moveDestination = (path: string, scratchpad: string): Result.Result<string, Error> =>
   path.toLowerCase() === scratchpad.toLowerCase()
-    ? Either.left(new Error("That filename is reserved for the scratchpad."))
-    : Either.right(path);
+    ? Result.fail(new Error("That filename is reserved for the scratchpad."))
+    : Result.succeed(path);
 
-const collectionPath = (name: string): Either.Either<string, Error> => {
+const collectionPath = (name: string): Result.Result<string, Error> => {
   const segments = name
     .split("/")
     .map((segment) => segment.trim().replace(/[\\:*?"<>|]/g, "-"))
     .filter(Boolean);
-  return Either.flatMap(validateSegments(segments), (parts) => {
+  return Result.flatMap(validateSegments(segments), (parts) => {
     const path = parts.join("/");
-    if (!path) return Either.left(new Error("Enter a collection name."));
+    if (!path) return Result.fail(new Error("Enter a collection name."));
     if (parts.some((part) => utf8Length(part) > 200))
-      return Either.left(new Error("Collection names must be 200 characters or fewer per folder."));
-    return Either.right(path);
+      return Result.fail(new Error("Collection names must be 200 characters or fewer per folder."));
+    return Result.succeed(path);
   });
 };
 
 const decodeString = Schema.decodeUnknownOption(Schema.String);
 const decodeBoolean = Schema.decodeUnknownOption(Schema.Boolean);
 const decodeBooleanText = Schema.decodeUnknownOption(
-  Schema.Literal("true", "yes", "1", "false", "no", "0"),
+  Schema.Literals(["true", "yes", "1", "false", "no", "0"]),
 );
-const decodeBooleanNumber = Schema.decodeUnknownOption(Schema.Literal(1, 0));
+const decodeBooleanNumber = Schema.decodeUnknownOption(Schema.Literals([1, 0]));
 const decodeTags = Schema.decodeUnknownOption(
-  Schema.Union(Schema.Array(Schema.Unknown), Schema.String),
+  Schema.Union([Schema.Array(Schema.Unknown), Schema.String]),
 );
 
 // Windows refuses these device names even with an extension.
@@ -408,8 +408,8 @@ export class FragmentLibrary {
     // Switching back to a note must read after its queued draft saves finish.
     await this.pending.get(path)?.catch(() => undefined);
     const fileResult = this.file(path);
-    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
-    const file = fileResult.right;
+    if (Result.isFailure(fileResult)) return Promise.reject(fileResult.failure);
+    const file = fileResult.success;
     return bodyOf(await run(() => this.app.vault.cachedRead(file)));
   }
 
@@ -421,8 +421,8 @@ export class FragmentLibrary {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!file) return "";
     const checked = scratchpadFile(file);
-    if (Either.isLeft(checked)) return Promise.reject(checked.left);
-    return run(() => this.app.vault.read(checked.right));
+    if (Result.isFailure(checked)) return Promise.reject(checked.failure);
+    return run(() => this.app.vault.read(checked.success));
   }
 
   async saveScratchpad(path: string, text: string, expected: string): Promise<void> {
@@ -430,8 +430,8 @@ export class FragmentLibrary {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!file) {
         const state = expected
-          ? Either.left(new Error("The scratchpad file was removed outside Fragments."))
-          : Either.right(undefined);
+          ? Result.fail(new Error("The scratchpad file was removed outside Fragments."))
+          : Result.succeed(undefined);
         await toPromise(state);
         await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
         await run(() => this.app.vault.create(path, text));
@@ -440,8 +440,8 @@ export class FragmentLibrary {
       const checked = await toPromise(scratchpadFile(file));
       await run(() =>
         this.app.vault.process(checked, (source) => {
-          return Either.getOrThrowWith(
-            source !== expected ? Either.left(new ScratchpadConflictError()) : Either.right(text),
+          return Result.getOrThrowWith(
+            source !== expected ? Result.fail(new ScratchpadConflictError()) : Result.succeed(text),
             (error) => error,
           );
         }),
@@ -474,8 +474,8 @@ export class FragmentLibrary {
   ): Promise<void> {
     await this.queue(path, async () => {
       const fileResult = this.file(path);
-      if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
-      const file = fileResult.right;
+      if (Result.isFailure(fileResult)) return Promise.reject(fileResult.failure);
+      const file = fileResult.success;
       await run(() =>
         this.app.vault.process(file, (source) => {
           // The caller's snapshot may predate a write this library already
@@ -507,13 +507,13 @@ export class FragmentLibrary {
                 ? "\n"
                 : "";
           const result = conflict
-            ? Either.left(
+            ? Result.fail(
                 new Error(
                   "This note changed outside Fragments. Copy your draft, then reopen the note before saving.",
                 ),
               )
-            : Either.right(`${header}${separator}${body}`);
-          return Either.getOrThrowWith(result, (error) => error);
+            : Result.succeed(`${header}${separator}${body}`);
+          return Result.getOrThrowWith(result, (error) => error);
         }),
       );
       this.written.set(path, { body, owner });
@@ -528,8 +528,8 @@ export class FragmentLibrary {
   ): Promise<void> {
     await this.queue(path, async () => {
       const fileResult = this.file(path);
-      if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
-      const file = fileResult.right;
+      if (Result.isFailure(fileResult)) return Promise.reject(fileResult.failure);
+      const file = fileResult.success;
       const previous = this.fragments.get(path)?.modified;
       await run(() =>
         this.app.fileManager.processFrontMatter(file, (matter) => {
@@ -546,8 +546,8 @@ export class FragmentLibrary {
 
   async rename(path: string, title: string): Promise<string> {
     const fileResult = this.file(path);
-    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
-    const file = fileResult.right;
+    if (Result.isFailure(fileResult)) return Promise.reject(fileResult.failure);
+    const file = fileResult.success;
     // The title doubles as the file base and availablePath appends ".md", so a
     // pasted "Notes.md" must not become "Notes.md.md".
     const requested = await toPromise(renameTitle(title));
@@ -565,7 +565,7 @@ export class FragmentLibrary {
       await this.refresh(file);
     }
     const titleResult = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         Effect.tryPromise({
           try: () =>
             this.app.fileManager.processFrontMatter(file, (matter) => {
@@ -576,8 +576,8 @@ export class FragmentLibrary {
         }),
       ),
     );
-    if (Either.isLeft(titleResult)) {
-      const error = titleResult.left;
+    if (Result.isFailure(titleResult)) {
+      const error = titleResult.failure;
       const reason = error instanceof Error ? error.message : String(error);
       return Promise.reject(
         new TitleWriteError(
@@ -592,8 +592,8 @@ export class FragmentLibrary {
 
   async move(path: string, collection: string): Promise<string> {
     const fileResult = this.file(path);
-    if (Either.isLeft(fileResult)) return Promise.reject(fileResult.left);
-    const file = fileResult.right;
+    if (Result.isFailure(fileResult)) return Promise.reject(fileResult.failure);
+    const file = fileResult.success;
     const folder = collection ? `${this.folder()}/${collection}` : this.folder();
     await this.ensureFolder(folder);
     const requestedPath = `${folder}/${file.name}`;
@@ -609,7 +609,7 @@ export class FragmentLibrary {
     await this.refresh(file);
     if (unique !== title) {
       const titleResult = await Effect.runPromise(
-        Effect.either(
+        Effect.result(
           Effect.tryPromise({
             try: () =>
               this.app.fileManager.processFrontMatter(file, (matter) => {
@@ -620,8 +620,8 @@ export class FragmentLibrary {
           }),
         ),
       );
-      if (Either.isLeft(titleResult)) {
-        const error = titleResult.left;
+      if (Result.isFailure(titleResult)) {
+        const error = titleResult.failure;
         const reason = error instanceof Error ? error.message : String(error);
         return Promise.reject(
           new TitleWriteError(
@@ -637,8 +637,8 @@ export class FragmentLibrary {
 
   async trash(path: string): Promise<void> {
     const file = this.file(path);
-    if (Either.isLeft(file)) return Promise.reject(file.left);
-    await run(() => this.app.fileManager.trashFile(file.right));
+    if (Result.isFailure(file)) return Promise.reject(file.failure);
+    await run(() => this.app.fileManager.trashFile(file.success));
     this.remove(path);
   }
 
@@ -648,8 +648,8 @@ export class FragmentLibrary {
     const existing = this.app.vault.getAbstractFileByPath(target);
     const available =
       existing && !(existing instanceof TFolder)
-        ? Either.left(new Error("A file with that name already exists."))
-        : Either.right(target);
+        ? Result.fail(new Error("A file with that name already exists."))
+        : Result.succeed(target);
     await toPromise(available);
     await this.ensureFolder(target);
     this.emit();
@@ -690,8 +690,8 @@ export class FragmentLibrary {
     const found = this.existingFolder(requested);
     const existing = await toPromise(
       found
-        ? Either.right(found)
-        : Either.left(new Error(`The folder “${requested}” does not exist in this vault.`)),
+        ? Result.succeed(found)
+        : Result.fail(new Error(`The folder “${requested}” does not exist in this vault.`)),
     );
     // Re-entering the folder that is already active (same path, different case or
     // trailing whitespace) must not clear and re-read the whole library.
@@ -776,7 +776,7 @@ export class FragmentLibrary {
     this.reading.add(path);
     await (async () => {
       const result = await Effect.runPromise(
-        Effect.either(
+        Effect.result(
           Effect.tryPromise({
             try: async () => {
               const body = bodyOf(await this.app.vault.cachedRead(file));
@@ -797,7 +797,7 @@ export class FragmentLibrary {
           }),
         ),
       );
-      if (Either.isRight(result)) return;
+      if (Result.isSuccess(result)) return;
       // A file may disappear while the background index is reading it, or a
       // transient failure leaves the preview empty. Retry a bounded number of
       // times, then stop: a permanently unreadable file must not schedule reads
@@ -833,11 +833,11 @@ export class FragmentLibrary {
     return current;
   }
 
-  private file(path: string): Either.Either<TFile, Error> {
+  private file(path: string): Result.Result<TFile, Error> {
     const file = this.app.vault.getAbstractFileByPath(this.resolvePath(path));
     return file instanceof TFile && this.contains(file.path)
-      ? Either.right(file)
-      : Either.left(new Error("Fragment is no longer available."));
+      ? Result.succeed(file)
+      : Result.fail(new Error("Fragment is no longer available."));
   }
 
   private async ensureFolder(path: string): Promise<void> {

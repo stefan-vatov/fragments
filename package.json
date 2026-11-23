@@ -37,7 +37,7 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "effect": "^3.22.4",
+    "effect": "^4.1.4",
     "highlight.js": "^11.12.0",
     "lucide-react": "^0.468.0",
     "react": "^19.3.1",

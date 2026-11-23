@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       effect:
-        specifier: ^3.22.4
-        version: 3.22.5
+        specifier: ^4.1.4
+        version: 4.1.4
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
@@ -1593,6 +1593,9 @@ packages:
 
   effect@3.22.5:
     resolution: {integrity: sha512-AdIU4llI19BzhJ4xUBZix7kS8oiYSlCsJ61j3UM3UyJw9ecDrsrrweDFm/Ku1nHbJWMLoynK+1Me4it3Zkmjpw==}
+
+  effect@4.1.4:
+    resolution: {integrity: sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==}
 
   electron-to-chromium@1.5.434:
     resolution: {integrity: sha512-7EeFW9OLf1NN9NKQP9xdOE/XKqjxv7JDPP6AEAkHli11+Fae1OaLoNuAf13hQv1PPNtuES0pLQSPk2+fS3s8ww==}
@@ -4457,6 +4460,8 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
+
+  effect@4.1.4: {}
 
   electron-to-chromium@1.5.434: {}
 

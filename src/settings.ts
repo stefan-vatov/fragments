@@ -7,13 +7,13 @@ import {
   type FuzzyMatch,
   type TextComponent,
 } from "obsidian";
-import { Effect, Either, Option, Schema } from "effect";
+import { Effect, Result, Option, Schema } from "effect";
 import { FolderSuggest } from "./folder-suggest";
 import type { LibrarySettings } from "./library";
 import type FragmentsPlugin from "./main";
 
-const attempt = <A>(operation: () => Promise<A>): Promise<Either.Either<A, unknown>> =>
-  Effect.runPromise(Effect.either(Effect.tryPromise({ try: operation, catch: (error) => error })));
+const attempt = <A>(operation: () => Promise<A>): Promise<Result.Result<A, unknown>> =>
+  Effect.runPromise(Effect.result(Effect.tryPromise({ try: operation, catch: (error) => error })));
 
 export type SnippetFont = "monospace" | "text" | "interface" | "serif" | "custom";
 
@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: FragmentsSettings = {
 
 const decodeStoredString = Schema.decodeUnknownOption(Schema.String);
 const decodeStoredFont = Schema.decodeUnknownOption(
-  Schema.Literal("monospace", "text", "interface", "serif", "custom"),
+  Schema.Literals(["monospace", "text", "interface", "serif", "custom"]),
 );
 
 /**
@@ -195,11 +195,11 @@ export class FragmentsSettingTab extends PluginSettingTab {
     const previous = this.plugin.settings.folder;
     text.inputEl.disabled = true;
     const flushed = await attempt(() => this.plugin.flushDrafts());
-    if (Either.isLeft(flushed)) {
+    if (Result.isFailure(flushed)) {
       text.inputEl.disabled = false;
       text.setValue(previous);
       new Notice(
-        `Save the open draft before changing the Fragments folder: ${String(flushed.left)}`,
+        `Save the open draft before changing the Fragments folder: ${String(flushed.failure)}`,
       );
       return;
     }
@@ -209,13 +209,13 @@ export class FragmentsSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         text.setValue(this.plugin.settings.folder);
       });
-      if (Either.isLeft(changed)) {
+      if (Result.isFailure(changed)) {
         const restored = await attempt(() => this.plugin.library.changeFolder(previous));
-        if (Either.isLeft(restored)) {
-          new Notice(`Could not reload the previous library: ${String(restored.left)}`);
+        if (Result.isFailure(restored)) {
+          new Notice(`Could not reload the previous library: ${String(restored.failure)}`);
         }
         text.setValue(previous);
-        new Notice(`Could not change the Fragments folder: ${String(changed.left)}`);
+        new Notice(`Could not change the Fragments folder: ${String(changed.failure)}`);
       }
     })().finally(() => {
       text.inputEl.disabled = false;
@@ -230,12 +230,12 @@ export class FragmentsSettingTab extends PluginSettingTab {
     if (fontWindow.queryLocalFonts) {
       const query = fontWindow.queryLocalFonts;
       const result = await attempt(() => query.call(fontWindow));
-      if (Either.isRight(result)) {
-        families = [...new Set(result.right.map((font) => font.family).filter(Boolean))].sort(
+      if (Result.isSuccess(result)) {
+        families = [...new Set(result.success.map((font) => font.family).filter(Boolean))].sort(
           (a, b) => a.localeCompare(b),
         );
       } else {
-        new Notice(`Could not list installed fonts: ${String(result.left)}`);
+        new Notice(`Could not list installed fonts: ${String(result.failure)}`);
       }
     }
     const choices = [
@@ -255,10 +255,10 @@ export class FragmentsSettingTab extends PluginSettingTab {
     this.plugin.settings.snippetFont = choice.font;
     if (choice.family) this.plugin.settings.customSnippetFont = choice.family;
     const result = await attempt(() => this.plugin.saveSettings());
-    if (Either.isLeft(result)) {
+    if (Result.isFailure(result)) {
       this.plugin.settings.snippetFont = previousFont;
       this.plugin.settings.customSnippetFont = previousFamily;
-      new Notice(`Could not save the snippet font: ${String(result.left)}`);
+      new Notice(`Could not save the snippet font: ${String(result.failure)}`);
     }
     this.display();
   }

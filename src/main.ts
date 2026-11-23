@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import { Notice, Platform, Plugin, type WorkspaceLeaf, TFile, TFolder } from "obsidian";
 import { FragmentLibrary } from "./library";
 import {
@@ -192,7 +192,7 @@ export default class FragmentsPlugin extends Plugin {
   private async openView(reveal: boolean): Promise<WorkspaceLeaf | undefined> {
     if (this.unloaded) return undefined;
     const result = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         Effect.tryPromise({
           try: async () => {
             const workspace = this.app.workspace;
@@ -214,7 +214,7 @@ export default class FragmentsPlugin extends Plugin {
         }),
       ),
     );
-    if (Either.isRight(result)) return result.right;
+    if (Result.isSuccess(result)) return result.success;
     new Notice("Fragments could not open.");
     return undefined;
   }
