@@ -12,3 +12,5 @@ overrides:
   undici@6.28.1: 6.29.1
   # security: GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g, GHSA-6pq8-jhm2-2vcw
   qs@6.15.1: 6.17.1
+  # security: GHSA-g3hv-75wg-m249
+  minimatch@10.2.6: 11.0.9
