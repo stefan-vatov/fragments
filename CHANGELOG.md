@@ -1,3 +1,10 @@
+## [1.6.3](https://github.com/stefan-vatov/fragments/compare/1.6.2...1.6.3) (2026-11-24)
+
+### Bug Fixes
+
+- **library:** keep own-write records for notes carried through a reload ([bf4d1d9](https://github.com/stefan-vatov/fragments/commit/bf4d1d92e6bf4e4f25698174390ec38256ea3594))
+- **vault:** keep the open draft through an external collection folder rename ([e369fc5](https://github.com/stefan-vatov/fragments/commit/e369fc5be63bda16b97531173144feba7800455d))
+
 ## [1.6.2](https://github.com/stefan-vatov/fragments/compare/1.6.1...1.6.2) (2026-11-15)
 
 ### Bug Fixes
