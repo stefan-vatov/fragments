@@ -65,6 +65,23 @@ describe("relocation bookkeeping", () => {
     expect(vault.files.has("Fragments/B.md")).toBe(false);
   });
 
+  it("still recognises its own write to a note carried through a folder-rename reload", async () => {
+    const vault = createTestVault();
+    vault.addFile("Fragments/Studio/A.md", note("Body"), 1_000);
+    const library = new FragmentLibrary(vault.app, { folder: "Fragments" });
+    await library.load();
+    const owner = { path: "Fragments/Studio/A.md" };
+
+    move(vault, "Fragments/Studio/A.md", "Fragments/Archive/A.md");
+    library.relocate("Fragments/Studio/A.md", "Fragments/Archive/A.md");
+    await library.saveBody("Fragments/Studio/A.md", "Draft", "Body\n", owner);
+    await library.load([["Fragments/Studio/A.md", "Fragments/Archive/A.md"]]);
+
+    // A second flush of the same draft, from the same snapshot, is not a conflict.
+    await library.saveBody("Fragments/Studio/A.md", "Draft", "Body\n", owner);
+    expect(vault.files.get("Fragments/Archive/A.md")?.text).toContain("Draft");
+  });
+
   it("clears relocations when the library reloads", async () => {
     const vault = createTestVault();
     vault.addFile("Fragments/A.md", note("Body"), 1_000);

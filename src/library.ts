@@ -336,7 +336,11 @@ export class FragmentLibrary {
     // existing folder matches, so the library never silently empties.
     this.settings.folder = this.existingFolder(this.folder()) ?? this.folder();
     this.fragments.clear();
-    this.written.clear();
+    // A carried note is the same note under a new path: the body this library
+    // last wrote there is still its own, so a queued flush of the same draft
+    // must not read it back as an external edit.
+    const carried = new Set((carry ?? []).flat());
+    for (const key of this.written.keys()) if (!carried.has(key)) this.written.delete(key);
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.contains(file.path));
     // Bodies survive a reload while their file is unchanged: switching folders
     // or renaming an unrelated folder must not re-read the whole corpus.
