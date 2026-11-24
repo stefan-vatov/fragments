@@ -14,12 +14,12 @@ class ResizeObserverStub {
 
 const note = `---\ntitle: Alpha\ntags: []\nstarred: false\nlanguage: "plaintext"\n---\n\nBody.\n`;
 
-async function mount() {
+async function mount(path = "Fragments/Alpha.md") {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
   document.body.replaceChildren();
 
   const { app, files, addFile } = createTestVault();
-  const file = addFile("Fragments/Alpha.md", note, 1_000);
+  const file = addFile(path, note, 1_000);
 
   const handlers: Record<string, (file: unknown, oldPath?: string) => void> = {};
   let leaf: { view?: unknown } = {};
@@ -67,7 +67,7 @@ async function mount() {
     setTimeout(() => handlers.rename?.(target, previous), 0);
   };
 
-  return { app, files, file, view, addFile, library: plugin.library };
+  return { app, files, file, view, addFile, handlers, library: plugin.library };
 }
 
 describe("vault rename events in the open fragment", () => {
@@ -152,6 +152,43 @@ describe("vault rename events in the open fragment", () => {
       expect(
         view.contentEl.querySelector(".fragments-title-wrap small")?.getAttribute("title"),
       ).toBe("Fragments/Alpha renamed.md");
+    } finally {
+      await act(async () => view.onClose());
+      view.contentEl.remove();
+    }
+  });
+
+  it("keeps the unsaved draft through an external collection folder rename", async () => {
+    const { app, files, file, view, handlers } = await mount("Fragments/Examples/Alpha.md");
+    const editor = () =>
+      view.contentEl.querySelector<HTMLTextAreaElement>('[aria-label="Fragment text"]');
+    try {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          editor(),
+          "Body, still typing.",
+        );
+        editor()?.dispatchEvent(new Event("input", { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      // Obsidian announces the folder first and re-keys each descendant in its
+      // own later event, so the moved note is not yet at its new path when the
+      // folder event arrives. All of this happens before the 700 ms autosave.
+      await act(async () => {
+        const folder = await app.vault.createFolder("Fragments/Examples Renamed");
+        handlers.rename?.(folder, "Fragments/Examples");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await app.fileManager.renameFile(file, "Fragments/Examples Renamed/Alpha.md");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+
+      expect(files.get("Fragments/Examples Renamed/Alpha.md")?.text ?? "").toContain(
+        "Body, still typing.",
+      );
+      expect(editor()?.value).toBe("Body, still typing.");
+      expect(view.contentEl.querySelector(".fragments-recovered")).toBeNull();
+      expect(view.contentEl.querySelector('[role="alert"]')).toBeNull();
     } finally {
       await act(async () => view.onClose());
       view.contentEl.remove();

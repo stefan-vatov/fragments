@@ -1288,10 +1288,9 @@ test("a collection created in one window appears in the other", async ({ app, se
   }
 });
 
-test("renaming a collection folder while dirty keeps the draft recoverable", async ({
-  app,
-  session,
-}) => {
+// The draft must survive whether the rename lands before, during or after the
+// autosave, so the assertions hold for every interleaving.
+test("renaming a collection folder while dirty keeps the draft", async ({ app, session }) => {
   await choose(app, "Playwright desk");
   await editor(app).fill("UNSAVED FOLDER DRAFT");
   await expect(app.getByRole("button", { name: "Save changes", exact: true })).toBeVisible();
@@ -1300,7 +1299,12 @@ test("renaming a collection folder while dirty keeps the draft recoverable", asy
       const folder = app.vault.getAbstractFileByPath(`${root}/Examples`);
       await app.fileManager.renameFile(folder, `${root}/Examples Renamed`);
     }, libraryRoot);
-    await expect(app.getByRole("button", { name: "Copy draft", exact: true })).toBeVisible();
+    await expect
+      .poll(() => readNote(disk(session, "Examples Renamed/Desk.md")))
+      .toContain("UNSAVED FOLDER DRAFT");
+    await expect(editor(app)).toHaveValue("UNSAVED FOLDER DRAFT");
+    await expect(title(app)).toHaveValue("Playwright desk");
+    await expect(app.getByRole("button", { name: "Copy draft", exact: true })).toHaveCount(0);
     await expect(app.getByText("Fragment is no longer available.")).toHaveCount(0);
   } finally {
     await session.host.evaluate(async (root) => {

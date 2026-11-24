@@ -11,6 +11,8 @@ import { FRAGMENTS_VIEW, FragmentsView } from "./view";
 
 const WINDOW_MARKER = "data-fragments-app-window";
 
+type Moves = ReadonlyArray<readonly [string, string]>;
+
 export default class FragmentsPlugin extends Plugin {
   settings: FragmentsSettings = { ...DEFAULT_SETTINGS };
   library!: FragmentLibrary;
@@ -18,6 +20,8 @@ export default class FragmentsPlugin extends Plugin {
   private unloaded = false;
   private settingsRevision = 0;
   private readonly settingsListeners = new Set<() => void>();
+  // Folder renames waiting for Obsidian to re-key their descendants.
+  private folderMoves: { moved: Moves; apply: () => void }[] = [];
 
   subscribeSettings = (listener: () => void): (() => void) => {
     this.settingsListeners.add(listener);
@@ -84,54 +88,39 @@ export default class FragmentsPlugin extends Plugin {
         if (file instanceof TFolder) this.library.folderTreeChanged();
         else if (file.path.toLowerCase() === this.library.scratchpadPath().toLowerCase())
           this.library.scratchpadChanged();
+        // A descendant deleted mid-move never reaches its new path.
+        this.settleFolderMoves();
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        // A folder rename arrives as one event with no per-descendant events,
-        // so evict the whole old subtree and rebuild under the new path. The
-        // moved paths must be remembered before remove() prunes the subtree.
+        // The moved paths must be remembered before remove() prunes the subtree.
         const moved = this.library
           .entries()
           .filter((entry) => entry.path === oldPath || entry.path.startsWith(`${oldPath}/`))
           .map((entry) => [entry.path, `${file.path}${entry.path.slice(oldPath.length)}`] as const);
-        this.library.remove(oldPath);
         if (file instanceof TFile) {
+          this.library.remove(oldPath);
           // The open draft still writes to the old path: point it at the new
           // file and persist before the list rebuild moves the selection away.
           this.library.relocate(oldPath, file.path);
           void this.flushDrafts()
             .catch(() => undefined)
             .then(() => this.library.refresh(file));
+          this.settleFolderMoves();
           return;
         }
         if (!(file instanceof TFolder)) return;
-        // Pending drafts addressed to the old paths must land on the moved
-        // files; record the moves before the reload clears them, then carry
-        // them through load() so the selection follows too.
-        for (const [from, to] of moved) this.library.relocate(from, to);
-        const root = this.library.folder();
-        if (oldPath === root || root.startsWith(`${oldPath}/`)) {
-          this.settings.folder = `${file.path}${root.slice(oldPath.length)}`;
-          // Reload regardless of the save result: a failed write must not leave
-          // the library indexing the old path. Surface the failure and retry
-          // the persistence once the reload has settled.
-          let saveFailed = false;
-          void this.saveSettings()
-            .catch((error: Error) => {
-              saveFailed = true;
-              new Notice(`Fragments could not save the new folder: ${error.message}`);
-            })
-            .then(() => this.library.load(moved))
-            .then(() => (saveFailed ? this.saveSettings() : undefined))
-            .catch((error: Error) => {
-              new Notice(`Fragments could not save the new folder: ${error.message}`);
-            });
-          return;
-        }
-        void this.flushDrafts()
-          .catch(() => undefined)
-          .then(() => this.library.load(moved));
+        // Obsidian announces a folder before it re-keys the descendants, each in
+        // its own later event. Until then the moved notes exist under neither
+        // path for a lookup by the new one, so evicting, saving or reloading now
+        // would treat the open draft's note as deleted. Wait for every moved
+        // note to leave its old path (re-keyed, or deleted mid-move).
+        this.folderMoves.push({
+          moved,
+          apply: () => this.applyFolderRename(file.path, oldPath, moved),
+        });
+        this.settleFolderMoves();
       }),
     );
     this.registerEvent(
@@ -171,6 +160,46 @@ export default class FragmentsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(FRAGMENTS_VIEW)) {
       if (leaf.view instanceof FragmentsView) await leaf.view.saveDraft();
     }
+  }
+
+  private settleFolderMoves(): void {
+    const settled = ({ moved }: { moved: Moves }): boolean =>
+      moved.every(([from]) => this.app.vault.getAbstractFileByPath(from) === null);
+    const ready = this.folderMoves.filter(settled);
+    this.folderMoves = this.folderMoves.filter((move) => !settled(move));
+    for (const move of ready) move.apply();
+  }
+
+  // Evict the whole old subtree and rebuild under the new path once every
+  // moved note is reachable there.
+  private applyFolderRename(path: string, oldPath: string, moved: Moves): void {
+    this.library.remove(oldPath);
+    // Pending drafts addressed to the old paths must land on the moved
+    // files; record the moves before the reload clears them, then carry
+    // them through load() so the selection follows too.
+    for (const [from, to] of moved) this.library.relocate(from, to);
+    const root = this.library.folder();
+    if (oldPath === root || root.startsWith(`${oldPath}/`)) {
+      this.settings.folder = `${path}${root.slice(oldPath.length)}`;
+      // Reload regardless of the save result: a failed write must not leave
+      // the library indexing the old path. Surface the failure and retry
+      // the persistence once the reload has settled.
+      let saveFailed = false;
+      void this.saveSettings()
+        .catch((error: Error) => {
+          saveFailed = true;
+          new Notice(`Fragments could not save the new folder: ${error.message}`);
+        })
+        .then(() => this.library.load(moved))
+        .then(() => (saveFailed ? this.saveSettings() : undefined))
+        .catch((error: Error) => {
+          new Notice(`Fragments could not save the new folder: ${error.message}`);
+        });
+      return;
+    }
+    void this.flushDrafts()
+      .catch(() => undefined)
+      .then(() => this.library.load(moved));
   }
 
   activateView(options: { reveal?: boolean } = {}): Promise<WorkspaceLeaf | undefined> {
