@@ -82,14 +82,7 @@ test("collection dialog validates, traps focus, cancels and creates nested colle
   await name.fill("../Outside");
   await name.press("Enter");
   await expect(dialog).toBeVisible();
-  await expect
-    .poll(async () =>
-      [
-        ...(await app.locator(".notice").allTextContents()),
-        ...(await session.host.locator(".notice").allTextContents()),
-      ].join("\n"),
-    )
-    .toContain("cannot contain");
+  await expect(dialog.getByRole("alert")).toContainText("cannot contain");
   await expect
     .poll(() =>
       session.host.evaluate(
@@ -243,14 +236,9 @@ test("external changes refresh clean notes and cannot overwrite an open dirty dr
     await expect
       .poll(() => readFile(disk(session, "Conflict.md"), "utf8"))
       .toContain("Another external edit won.");
-    await expect
-      .poll(async () =>
-        [
-          ...(await app.locator(".notice").allTextContents()),
-          ...(await session.host.locator(".notice").allTextContents()),
-        ].join("\n"),
-      )
-      .toContain("changed outside Fragments");
+    await expect(
+      app.getByRole("alert").filter({ hasText: "changed outside Fragments" }),
+    ).toBeVisible();
   } finally {
     await session.host.evaluate(() => {
       const gate = window.__fragmentsQaSave;
